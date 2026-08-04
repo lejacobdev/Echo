@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark light" />
+<meta name="theme-color" content="#0b0e14" />
+<meta name="description" content="Echo — find each other precisely in a crowd using only sound. No GPS, works on any phone." />
+<title>Echo — Find each other by sound</title>
+<link rel="stylesheet" href="/css/app.css" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="icon" href="/icons/icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Echo" />
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#/">
+    <svg class="brand-logo" viewBox="0 0 48 48" aria-hidden="true">
+      <circle cx="24" cy="24" r="4" fill="currentColor"/>
+      <circle cx="24" cy="24" r="11" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.7"/>
+      <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.35"/>
+    </svg>
+    <span class="brand-name">Echo</span>
+  </a>
+  <div class="topbar-right">
+    <span id="activity-pill" class="pill pill-idle">
+      <span class="pill-dot" aria-hidden="true"></span>
+      <span id="activity-text" data-i18n="status.idle">Mic off</span>
+    </span>
+    <button id="account-chip" class="account-chip hidden" aria-label="Account"></button>
+  </div>
+</header>
+
+<div id="offline-banner" class="offline-banner hidden" data-i18n="app.offline">
+  You're offline — nearby mode still works, accounts and meetups need a connection.
+</div>
+
+<main id="views">
+
+  <!-- ============ HOME ============ -->
+  <section id="view-home" class="view">
+    <div class="hero">
+      <div class="hero-rings" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h1 data-i18n="home.title">Find each other by sound</h1>
+      <p class="muted" data-i18n="home.subtitle">Festivals, plazas, pickups — Echo measures the distance between two phones with an inaudible chirp. No GPS. Works on iPhone and Android.</p>
+    </div>
+
+    <div id="unsupported-card" class="card card-warn hidden">
+      <h2 data-i18n="unsupported.title">This browser can't run Echo</h2>
+      <p data-i18n="unsupported.body">Echo needs microphone access and the Web Audio API over HTTPS. Try the latest Chrome, Safari or Firefox.</p>
+    </div>
+
+    <div class="stack">
+      <button id="home-start" class="btn btn-primary btn-big">
+        <span class="btn-icon">📡</span>
+        <span>
+          <span class="btn-title" data-i18n="home.start">Start a meetup</span>
+          <span class="btn-sub" data-i18n="home.startSub">Invite a friend or share a code</span>
+        </span>
+      </button>
+      <button id="home-join" class="btn btn-outline btn-big">
+        <span class="btn-icon">🔑</span>
+        <span>
+          <span class="btn-title" data-i18n="home.join">Join with a code</span>
+          <span class="btn-sub" data-i18n="home.joinSub">Someone sent you an Echo code or link</span>
+        </span>
+      </button>
+      <button id="home-local" class="btn btn-outline btn-big">
+        <span class="btn-icon">📴</span>
+        <span>
+          <span class="btn-title" data-i18n="home.local">Nearby mode</span>
+          <span class="btn-sub" data-i18n="home.localSub">No account, no internet — pick roles manually</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="card card-quiet">
+      <h2 data-i18n="home.how">How it works</h2>
+      <ol class="steps">
+        <li data-i18n="home.how1">Both phones open Echo and connect (or pick roles in nearby mode).</li>
+        <li data-i18n="home.how2">Hold the phones together once and calibrate.</li>
+        <li data-i18n="home.how3">Walk apart — ping to see the live distance shrink as you close in.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ AUTH ============ -->
+  <section id="view-auth" class="view hidden">
+    <div class="card">
+      <div class="seg" role="tablist">
+        <button id="auth-tab-login" class="seg-btn active" data-i18n="auth.login">Sign in</button>
+        <button id="auth-tab-signup" class="seg-btn" data-i18n="auth.signup">Create account</button>
+      </div>
+      <form id="auth-form" class="form" novalidate>
+        <label class="field">
+          <span data-i18n="auth.handle">Username</span>
+          <input id="auth-handle" name="handle" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="20" required />
+        </label>
+        <label class="field" id="auth-name-field" hidden>
+          <span data-i18n="auth.name">Display name</span>
+          <input id="auth-name" name="name" autocomplete="name" maxlength="40" />
+        </label>
+        <label class="field">
+          <span data-i18n="auth.password">Password</span>
+          <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" required />
+        </label>
+        <p id="auth-error" class="form-error" role="alert" hidden></p>
+        <button id="auth-submit" class="btn btn-primary" type="submit" data-i18n="auth.login">Sign in</button>
+      </form>
+      <p class="muted small" data-i18n="auth.note">Accounts only store your username, display name and friends — nothing else. Nearby mode needs no account at all.</p>
+    </div>
+  </section>
+
+  <!-- ============ JOIN ============ -->
+  <section id="view-join" class="view hidden">
+    <div class="card">
+      <h2 data-i18n="join.title">Join a meetup</h2>
+      <form id="join-form" class="form" novalidate>
+        <label class="field">
+          <span data-i18n="join.code">Meetup code</span>
+          <input id="join-code" class="input-code" autocapitalize="characters" autocomplete="off" spellcheck="false" maxlength="6" placeholder="ABC123" required />
+        </label>
+        <label class="field" id="join-name-field">
+          <span data-i18n="join.guestName">Your name (no account needed)</span>
+          <input id="join-name" maxlength="40" autocomplete="name" />
+        </label>
+        <p id="join-error" class="form-error" role="alert" hidden></p>
+        <button class="btn btn-primary" type="submit" data-i18n="join.go">Join</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ FIND (local + meetup) ============ -->
+  <section id="view-find" class="view hidden">
+
+    <div class="find-context card card-quiet">
+      <div class="find-context-left">
+        <span id="find-mode-label" class="tag"></span>
+        <span id="find-peer" class="find-peer muted" data-i18n="find.waitingPeer">Waiting for your partner to join…</span>
+      </div>
+      <span id="find-conn" class="pill pill-idle hidden"><span class="pill-dot"></span><span id="find-conn-text"></span></span>
+    </div>
+
+    <div id="find-share-card" class="card hidden">
+      <h2 data-i18n="find.shareTitle">Share this code</h2>
+      <div class="invite-row">
+        <div id="find-code" class="code-display"></div>
+        <div class="invite-actions">
+          <button id="btn-share-link" class="btn btn-outline btn-sm" data-i18n="find.shareLink">Share link</button>
+          <button id="btn-copy-link" class="btn btn-outline btn-sm" data-i18n="find.copyLink">Copy link</button>
+        </div>
+      </div>
+      <div id="find-qr" class="qr-box" aria-label="QR code with the invite link"></div>
+    </div>
+
+    <div class="card find-main">
+      <div class="role-row">
+        <div class="role-current">
+          <span class="muted small" data-i18n="find.yourRole">Your role</span>
+          <strong id="find-role-name">—</strong>
+        </div>
+        <div id="local-role-toggle" class="seg hidden">
+          <button id="role-btn-seeker" class="seg-btn active" data-i18n="role.seeker">Seeker</button>
+          <button id="role-btn-responder" class="seg-btn" data-i18n="role.responder">Responder</button>
+        </div>
+        <button id="btn-swap" class="btn btn-outline btn-sm hidden" data-i18n="find.swap">Swap roles</button>
+      </div>
+
+      <div class="dial-wrap">
+        <svg id="dial" viewBox="0 0 200 200" class="dial">
+          <circle cx="100" cy="100" r="88" class="dial-track" />
+          <circle id="dial-progress" cx="100" cy="100" r="88" class="dial-fill" />
+          <g id="dial-pulse" class="dial-pulse-group"></g>
+        </svg>
+        <div class="dial-center">
+          <div id="dial-distance" class="dial-distance">—</div>
+          <div id="dial-band" class="dial-band muted" data-i18n="find.pressPing">Calibrate first</div>
+          <div id="dial-trend" class="dial-trend"></div>
+        </div>
+      </div>
+
+      <div id="seeker-controls" class="find-controls">
+        <button id="btn-calibrate" class="btn btn-outline" data-i18n="find.calibrate">Calibrate</button>
+        <button id="btn-ping" class="btn btn-primary btn-round" disabled data-i18n="find.ping">Ping</button>
+        <button id="btn-autoping" class="btn btn-outline" disabled aria-pressed="false" data-i18n="find.live">Live</button>
+      </div>
+
+      <div id="responder-panel" class="responder-panel hidden">
+        <div class="listening-anim" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <p class="muted" data-i18n="find.responderHint">Listening — keep this screen open. Your phone replies automatically.</p>
+        <p class="muted small"><span id="reply-count">0</span> <span data-i18n="find.repliesSent">replies sent</span></p>
+      </div>
+
+      <p id="find-hint" class="muted small center" data-i18n="find.calibrateHint">Hold both phones together and calibrate before you start.</p>
+    </div>
+
+    <div id="quick-card" class="card hidden">
+      <h2 data-i18n="find.quickTitle">Quick messages</h2>
+      <div id="quick-buttons" class="quick-row"></div>
+    </div>
+
+    <div class="find-footer">
+      <button id="btn-found" class="btn btn-primary hidden" data-i18n="find.foundBtn">🎉 We found each other</button>
+      <button id="btn-end" class="btn btn-danger-outline" data-i18n="find.end">End session</button>
+    </div>
+
+    <details id="debug" class="debug card card-quiet hidden">
+      <summary data-i18n="debug.title">Diagnostics</summary>
+      <dl class="debug-grid">
+        <dt data-i18n="debug.samplerate">Sample rate</dt><dd id="dbg-samplerate">—</dd>
+        <dt data-i18n="debug.channel">Channel</dt><dd id="dbg-channel">—</dd>
+        <dt data-i18n="debug.rtt">Raw RTT</dt><dd id="dbg-rtt">—</dd>
+        <dt data-i18n="debug.offset">Calibration offset</dt><dd id="dbg-offset">—</dd>
+        <dt data-i18n="debug.magSeek">Signal @ seek freq</dt><dd id="dbg-mag-seek">—</dd>
+        <dt data-i18n="debug.magReply">Signal @ reply freq</dt><dd id="dbg-mag-reply">—</dd>
+        <dt data-i18n="debug.floor">Noise floor</dt><dd id="dbg-floor">—</dd>
+        <dt data-i18n="debug.threshold">Trigger threshold</dt><dd id="dbg-threshold">—</dd>
+      </dl>
+    </details>
+  </section>
+
+  <!-- ============ FRIENDS ============ -->
+  <section id="view-friends" class="view hidden">
+    <div id="friends-signedout" class="card hidden">
+      <h2 data-i18n="friends.title">Friends</h2>
+      <p class="muted" data-i18n="friends.signedOut">Sign in to add friends and start meetups with one tap.</p>
+      <button id="friends-goto-auth" class="btn btn-primary" data-i18n="auth.login">Sign in</button>
+    </div>
+
+    <div id="friends-signedin" class="hidden">
+      <div class="card">
+        <h2 data-i18n="friends.add">Add a friend</h2>
+        <div class="search-row">
+          <input id="friend-search" data-i18n-placeholder="friends.searchPh" placeholder="Search by username…" autocapitalize="none" spellcheck="false" maxlength="30" />
+        </div>
+        <ul id="friend-results" class="list"></ul>
+      </div>
+
+      <div id="requests-card" class="card hidden">
+        <h2 data-i18n="friends.requests">Requests</h2>
+        <ul id="requests-incoming" class="list"></ul>
+        <ul id="requests-outgoing" class="list muted-list"></ul>
+      </div>
+
+      <div class="card">
+        <h2 data-i18n="friends.yours">Your friends</h2>
+        <ul id="friends-list" class="list"></ul>
+        <p id="friends-empty" class="muted small" data-i18n="friends.empty">No friends yet — search above, or share a meetup code from the home screen.</p>
+      </div>
+
+      <div id="blocked-card" class="card card-quiet hidden">
+        <h2 data-i18n="friends.blocked">Blocked</h2>
+        <ul id="blocked-list" class="list"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HISTORY ============ -->
+  <section id="view-history" class="view hidden">
+    <div class="card">
+      <h2 data-i18n="history.title">Past meetups</h2>
+      <ul id="history-list" class="list"></ul>
+      <p id="history-empty" class="muted small" data-i18n="history.empty">Nothing here yet. Meetups you complete while signed in appear here.</p>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS ============ -->
+  <section id="view-settings" class="view hidden">
+    <div id="profile-card" class="card hidden">
+      <h2 data-i18n="settings.profile">Profile</h2>
+      <div class="field">
+        <span data-i18n="settings.avatar">Avatar</span>
+        <div id="emoji-grid" class="emoji-grid"></div>
+      </div>
+      <label class="field">
+        <span data-i18n="auth.name">Display name</span>
+        <input id="profile-name" maxlength="40" />
+      </label>
+      <button id="profile-save" class="btn btn-primary btn-sm" data-i18n="settings.save">Save</button>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="settings.app">App</h2>
+      <label class="field-row">
+        <span data-i18n="settings.language">Language</span>
+        <select id="set-lang">
+          <option value="auto" data-i18n="settings.auto">Auto</option>
+          <option value="en">English</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Français</option>
+          <option value="es">Español</option>
+        </select>
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.theme">Theme</span>
+        <select id="set-theme">
+          <option value="auto" data-i18n="settings.auto">Auto</option>
+          <option value="dark" data-i18n="settings.dark">Dark</option>
+          <option value="light" data-i18n="settings.light">Light</option>
+        </select>
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.haptics">Haptic feedback</span>
+        <input type="checkbox" id="set-haptics" class="switch" checked />
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.soundfx">Audible ticks (accessibility)</span>
+        <input type="checkbox" id="set-soundfx" class="switch" />
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.notifications">Meetup notifications</span>
+        <input type="checkbox" id="set-notifications" class="switch" />
+      </label>
+    </div>
+
+    <div class="card">
+      <h2 data-i18n="settings.acoustic">Acoustic engine</h2>
+      <label class="field-row">
+        <span data-i18n="settings.channel">Frequency channel</span>
+        <select id="set-channel">
+          <option value="A" data-i18n="settings.channelA">A — 19/20 kHz (default)</option>
+          <option value="B" data-i18n="settings.channelB">B — 17.5/18.5 kHz (older speakers)</option>
+        </select>
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.adaptive">Adaptive detection threshold</span>
+        <input type="checkbox" id="set-adaptive" class="switch" checked />
+      </label>
+      <label class="field" id="manual-threshold-field" hidden>
+        <span><span data-i18n="settings.threshold">Manual threshold</span>: <span id="set-threshold-val">165</span></span>
+        <input type="range" id="set-threshold" min="60" max="250" value="165" />
+      </label>
+      <label class="field-row">
+        <span data-i18n="settings.debug">Show diagnostics panel</span>
+        <input type="checkbox" id="set-debug" class="switch" />
+      </label>
+    </div>
+
+    <div id="account-card" class="card hidden">
+      <h2 data-i18n="settings.account">Account</h2>
+      <form id="password-form" class="form">
+        <label class="field"><span data-i18n="settings.currentPw">Current password</span>
+          <input id="pw-current" type="password" autocomplete="current-password" required minlength="8" /></label>
+        <label class="field"><span data-i18n="settings.newPw">New password</span>
+          <input id="pw-next" type="password" autocomplete="new-password" required minlength="8" /></label>
+        <button class="btn btn-outline btn-sm" type="submit" data-i18n="settings.changePw">Change password</button>
+      </form>
+      <div class="row-gap">
+        <button id="btn-logout" class="btn btn-outline btn-sm" data-i18n="settings.logout">Sign out</button>
+        <button id="btn-delete-account" class="btn btn-danger-outline btn-sm" data-i18n="settings.deleteAccount">Delete account</button>
+      </div>
+    </div>
+
+    <div class="card card-quiet">
+      <h2 data-i18n="about.title">About Echo</h2>
+      <p class="muted small" data-i18n="about.short">Echo measures the round-trip time of ultrasonic chirps between two phones and converts it to distance. Everything acoustic happens on-device.</p>
+      <button id="btn-about" class="btn btn-outline btn-sm" data-i18n="about.more">How it works &amp; limitations</button>
+    </div>
+  </section>
+
+  <!-- ============ ABOUT ============ -->
+  <section id="view-about" class="view hidden">
+    <div class="card">
+      <h2 data-i18n="about.title">About Echo</h2>
+      <p data-i18n="about.p1">Echo's Seeker phone plays a short, near-inaudible chirp and starts a timer. The Responder phone hears it and instantly chirps back on a different frequency. The Seeker measures the round trip, subtracts the hardware latency you calibrated away, and converts the remainder to distance at the speed of sound (343 m/s).</p>
+      <h2 data-i18n="about.limits">Honest limitations</h2>
+      <ul class="steps">
+        <li data-i18n="about.l1">Accuracy is realistically 1–3 m — browser audio buffering adds noise. It's a proximity aid, not survey gear.</li>
+        <li data-i18n="about.l2">Range is roughly 5–10 m in quiet conditions; loud or echoey places reduce it.</li>
+        <li data-i18n="about.l3">Distance only, no compass bearing — that would need synchronized multi-mic access, a native-app stretch goal.</li>
+        <li data-i18n="about.l4">Some laptops and older phones can't emit or hear 19–20 kHz well — try frequency channel B in settings.</li>
+      </ul>
+      <h2 data-i18n="about.privacy">Privacy</h2>
+      <p data-i18n="about.pv1">The microphone runs only while a find session is open and its state is always shown in the header. Audio is analyzed on-device and never recorded, stored or uploaded. Ultrasound got a bad name from covert ad-tracking beacons — Echo is the opposite: strictly opt-in, visible and session-only.</p>
+    </div>
+  </section>
+</main>
+
+<!-- ============ TABBAR ============ -->
+<nav id="tabbar" class="tabbar">
+  <button data-nav="home" class="tab active"><span class="tab-icon">🏠</span><span data-i18n="nav.home">Home</span></button>
+  <button data-nav="friends" class="tab"><span class="tab-icon">👥</span><span data-i18n="nav.friends">Friends</span></button>
+  <button data-nav="history" class="tab"><span class="tab-icon">🕓</span><span data-i18n="nav.history">History</span></button>
+  <button data-nav="settings" class="tab"><span class="tab-icon">⚙️</span><span data-i18n="nav.settings">Settings</span></button>
+</nav>
+
+<!-- ============ MODALS / TOASTS ============ -->
+<div id="modal-backdrop" class="modal-backdrop hidden">
+  <div id="modal-invite" class="modal hidden" role="dialog" aria-modal="true">
+    <div id="invite-from" class="modal-emoji">📡</div>
+    <h2 id="invite-title" class="center"></h2>
+    <p class="muted center" data-i18n="invite.body">wants to find you with Echo.</p>
+    <div class="row-gap center">
+      <button id="invite-decline" class="btn btn-outline" data-i18n="invite.decline">Not now</button>
+      <button id="invite-accept" class="btn btn-primary" data-i18n="invite.accept">Let's meet</button>
+    </div>
+  </div>
+  <div id="modal-found" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-emoji">🎉</div>
+    <h2 class="center" data-i18n="found.title">You found each other!</h2>
+    <p class="muted center" data-i18n="found.body">Nice. Echo is done — the session has ended.</p>
+    <div class="center"><button id="found-close" class="btn btn-primary" data-i18n="found.close">Done</button></div>
+  </div>
+  <div id="modal-confirm" class="modal hidden" role="dialog" aria-modal="true">
+    <h2 id="confirm-title" class="center"></h2>
+    <p id="confirm-body" class="muted center"></p>
+    <div class="row-gap center">
+      <button id="confirm-no" class="btn btn-outline" data-i18n="confirm.cancel">Cancel</button>
+      <button id="confirm-yes" class="btn btn-danger" data-i18n="confirm.yes">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="calib-overlay" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-emoji">🤝</div>
+    <h2 class="center" data-i18n="calib.title">Calibration</h2>
+    <p id="calib-step" class="muted center" data-i18n="calib.hold">Hold both phones touching each other, then start. Echo measures your hardware's audio latency at distance zero.</p>
+    <div id="calib-progress" class="calib-progress hidden"><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="row-gap center">
+      <button id="calib-cancel" class="btn btn-outline" data-i18n="confirm.cancel">Cancel</button>
+      <button id="calib-start" class="btn btn-primary" data-i18n="calib.start">Start calibration</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
