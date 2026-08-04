@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>Echo — Find each other by sound</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <h1>Echo</h1>
+    <p class="tagline">Find each other by sound — no GPS, no app store, just two phones.</p>
+  </header>
+
+  <!-- Always-visible activation indicator: mic/speaker never run silently or in the background -->
+  <div id="activity-banner" class="activity-banner hidden">
+    <span class="dot" aria-hidden="true"></span>
+    <span id="activity-text">Microphone &amp; speaker inactive</span>
+  </div>
+
+  <main id="app">
+
+    <!-- STAGE 0: unsupported browser -->
+    <section id="stage-unsupported" class="stage hidden">
+      <div class="card warning-card">
+        <h2>This browser can't run Echo</h2>
+        <p>Echo needs microphone access and the Web Audio API, which this browser doesn't support (or you're on an insecure, non-HTTPS connection).</p>
+        <p>Try the latest Chrome, Safari, or Firefox on this device, served over HTTPS or from <code>localhost</code>.</p>
+      </div>
+    </section>
+
+    <!-- STAGE 0b: mic permission denied -->
+    <section id="stage-denied" class="stage hidden">
+      <div class="card warning-card">
+        <h2>Microphone access needed</h2>
+        <p>Echo can't find your partner's phone without listening for its reply chirp. You denied (or dismissed) the microphone permission prompt.</p>
+        <p>Enable microphone access for this site in your browser's site settings, then reload the page.</p>
+        <button id="retry-permission" class="btn btn-secondary">Try again</button>
+      </div>
+    </section>
+
+    <!-- STAGE 1: intro + role picker -->
+    <section id="stage-role" class="stage">
+      <div class="card">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li>Both people open this page on their phones.</li>
+          <li>One picks <strong>Seeker</strong>, the other picks <strong>Responder</strong>.</li>
+          <li>Hold both phones touching each other and tap <strong>Calibrate</strong>.</li>
+          <li>Now walk apart. Tap <strong>Ping</strong> to see the live distance between you.</li>
+        </ol>
+      </div>
+
+      <div class="card">
+        <h2>Choose your role</h2>
+        <div class="role-picker">
+          <button id="role-seeker" class="role-btn" data-role="seeker">
+            <span class="role-icon">🔍</span>
+            <span class="role-name">Seeker</span>
+            <span class="role-desc">I'm looking for my friend</span>
+          </button>
+          <button id="role-responder" class="role-btn" data-role="responder">
+            <span class="role-icon">📡</span>
+            <span class="role-name">Responder</span>
+            <span class="role-desc">My friend is looking for me</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- STAGE 2: Seeker UI -->
+    <section id="stage-seeker" class="stage hidden">
+      <div class="card">
+        <h2>Seeker</h2>
+        <p class="onboarding-copy" id="seeker-onboarding">
+          Hold both phones together and tap <strong>Calibrate</strong> before you start.
+        </p>
+
+        <div class="calibration-row">
+          <button id="btn-calibrate" class="btn btn-secondary">Calibrate</button>
+          <span id="calibration-status" class="calibration-status">Not calibrated yet</span>
+        </div>
+
+        <div class="ping-stage">
+          <div class="ping-visual" id="ping-visual">
+            <div class="ping-visual-core">📱</div>
+          </div>
+          <button id="btn-ping" class="btn btn-primary btn-ping" disabled>Ping</button>
+        </div>
+
+        <div class="distance-readout">
+          <div class="distance-value" id="distance-value">— m</div>
+          <div class="distance-label" id="distance-label">Calibrate, then tap Ping</div>
+        </div>
+      </div>
+
+      <button class="btn btn-link" id="seeker-switch-role">Switch role</button>
+    </section>
+
+    <!-- STAGE 3: Responder UI -->
+    <section id="stage-responder" class="stage hidden">
+      <div class="card">
+        <h2>Responder</h2>
+        <p class="onboarding-copy">
+          Keep this screen open and the phone nearby. Echo is listening — no need to touch anything.
+        </p>
+
+        <div class="ping-stage">
+          <div class="ping-visual" id="responder-visual">
+            <div class="ping-visual-core">👂</div>
+          </div>
+        </div>
+
+        <div class="responder-status">
+          <span id="responder-reply-count">0</span> reply chirp(s) sent this session
+        </div>
+      </div>
+
+      <button class="btn btn-link" id="responder-switch-role">Switch role</button>
+    </section>
+
+    <section class="card limitations-card">
+      <h2>Honest limitations</h2>
+      <ul>
+        <li>Accuracy is realistically <strong>1–3 meters</strong>, not centimeters — this is a proximity aid, not survey-grade positioning.</li>
+        <li>Effective range is roughly <strong>5–10 meters</strong> in quiet conditions, less in loud or echoey environments.</li>
+        <li>No directional bearing yet — you get distance only, not "which way." That needs multiple synced mics (native app, stretch goal).</li>
+        <li>Uses a brief, near-inaudible ultrasonic chirp only while this page is open and a role is selected. Nothing runs in the background or without you tapping a button.</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <!-- Debug panel, hidden by default -->
+  <button id="debug-toggle" class="debug-toggle">🐞 Debug</button>
+  <aside id="debug-panel" class="debug-panel hidden">
+    <h3>Debug</h3>
+    <dl>
+      <dt>Role</dt><dd id="dbg-role">—</dd>
+      <dt>Sample rate</dt><dd id="dbg-samplerate">—</dd>
+      <dt>Raw RTT (last)</dt><dd id="dbg-rtt">—</dd>
+      <dt>Calibration offset</dt><dd id="dbg-offset">—</dd>
+      <dt>Mag @ 19kHz</dt><dd id="dbg-mag19">—</dd>
+      <dt>Mag @ 20kHz</dt><dd id="dbg-mag20">—</dd>
+    </dl>
+    <label class="debug-slider-label">
+      Detection threshold: <span id="dbg-threshold-val">165</span>
+      <input type="range" id="dbg-threshold" min="50" max="255" value="165" />
+    </label>
+    <button id="debug-stop-session" class="btn btn-secondary btn-small">Stop mic/speaker session</button>
+  </aside>
+
+  <script src="app.js"></script>
+</body>
+</html>
