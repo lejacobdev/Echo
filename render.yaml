@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: echo
+    env: node
+    plan: free
+    buildCommand: "echo 'no build step — zero runtime dependencies'"
+    startCommand: "node server/server.js"
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
