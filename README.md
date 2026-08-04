@@ -108,6 +108,30 @@ diagnostics panel (Settings → "Show diagnostics panel") exposes raw RTT,
 offset, live magnitudes and the effective threshold, plus a manual threshold
 slider for tuning on unusual hardware.
 
+**Detection runs on an `AudioWorklet`**, not the UI thread. Everything that
+turns a chirp into an RTT — the frequency-energy check, threshold crossing,
+and its timestamp — happens inside `ranging-worklet.js`, a processor running
+on the browser's dedicated real-time audio thread, using a
+[Goertzel](https://en.wikipedia.org/wiki/Goertzel_algorithm) detector tuned
+to the exact seek/reply frequencies rather than the nearest bin of a
+general-purpose FFT. This matters for two concrete reasons:
+- **Accuracy**: timestamps come from the AudioContext's own clock
+  (`ctx.currentTime`), sampled every ~2.7 ms render quantum — not from
+  `requestAnimationFrame`, which ticks at best every ~16.7 ms and gets
+  throttled to roughly 1 fps the instant the tab loses foreground focus
+  (switching apps, a notification, iPad Split View). That throttling was
+  previously capable of injecting multiple *seconds* of apparent RTT noise.
+- **Sensitivity**: an exact-frequency check has better SNR than reading off
+  a quantized FFT bin grid, so weak/far-away signal stays detectable a bit
+  longer as range increases.
+
+Falls back automatically to the original `requestAnimationFrame` +
+`AnalyserNode` polling loop on the rare browser without `AudioWorklet`
+support (`public/js/goertzel.js` holds the reference implementation, unit
+tested with synthetic tones in `tests/goertzel.test.js`; the worklet embeds
+an identical, self-contained copy since Safari's `audioWorklet.addModule()`
+compatibility is best with no cross-file imports).
+
 ## Honest limitations
 
 - **Accuracy is realistically 1–3 m**, not centimeters — browser audio
@@ -143,7 +167,9 @@ public/
     find.js     # find-session controller (local + meetup modes)
     social.js   # auth, friends, history, settings, join views
     ranging.js  # protocol state machine + pure math (unit-tested in node)
-    audio.js    # AudioEngine: mic, FFT, tone/tick synthesis, noise floors
+    audio.js    # AudioEngine: mic, worklet wiring, tone/tick synthesis
+    ranging-worklet.js  # AudioWorkletProcessor: real-time-thread detection
+    goertzel.js # exact-frequency energy detector, shared/tested reference
     net.js      # fetch wrapper, reconnecting WebSocket, safe storage
     i18n.js     # EN/DE/FR/ES dictionaries + translation helpers
     qr.js       # QR generator (byte mode, ECC-L, v1–5), zero deps

@@ -10,6 +10,8 @@ const SHELL = [
   '/js/social.js',
   '/js/audio.js',
   '/js/ranging.js',
+  '/js/ranging-worklet.js',
+  '/js/goertzel.js',
   '/js/net.js',
   '/js/i18n.js',
   '/js/qr.js',

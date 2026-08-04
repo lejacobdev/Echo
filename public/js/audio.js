@@ -1,5 +1,10 @@
-// AudioEngine: owns the AudioContext, mic stream and analyser.
-// Emits tone bursts and exposes per-frequency magnitude + noise-floor tracking.
+// AudioEngine: owns the AudioContext, mic stream, and signal detection.
+//
+// Detection runs on an AudioWorklet (ranging-worklet.js) when available —
+// sample-accurate timing on the real-time audio thread, immune to
+// requestAnimationFrame's background-tab throttling and to whatever the UI
+// thread is doing. Falls back to AnalyserNode + polling (the original
+// approach) on browsers without AudioWorklet support.
 
 const FFT_SIZE = 4096;
 const TONE_DURATION = 0.08;   // s
@@ -11,8 +16,13 @@ export class AudioEngine {
     this.stream = null;
     this.analyser = null;
     this.freqData = null;
-    this.floors = new Map(); // freq -> EMA noise floor
+    this.floors = new Map(); // freq -> EMA noise floor (fallback path only)
     this.outputGain = 1;
+
+    this.worklet = null;
+    this.workletReady = false;
+    this.onDetect = null;      // (freqIndex, audioTimeSec, mag) => void
+    this.onWorkletLevels = null; // ({ mags, floors, thresholds }) => void
   }
 
   get sampleRate() {
@@ -21,6 +31,10 @@ export class AudioEngine {
 
   get active() {
     return !!(this.ctx && this.stream);
+  }
+
+  get currentAudioTime() {
+    return this.ctx ? this.ctx.currentTime : 0;
   }
 
   static supported() {
@@ -54,14 +68,48 @@ export class AudioEngine {
     if (this.ctx.state === 'suspended') await this.ctx.resume();
 
     const src = this.ctx.createMediaStreamSource(this.stream);
+
+    // Fallback path: always set up (cheap), used directly if the worklet
+    // fails to load, and otherwise idle.
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = FFT_SIZE;
     this.analyser.smoothingTimeConstant = 0;
     src.connect(this.analyser);
     this.freqData = new Uint8Array(this.analyser.frequencyBinCount);
+
+    try {
+      await this.ctx.audioWorklet.addModule('/js/ranging-worklet.js');
+      this.worklet = new AudioWorkletNode(this.ctx, 'ranging-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        channelCount: 1,
+        channelCountMode: 'explicit',
+      });
+      src.connect(this.worklet);
+      // A worklet with no live downstream consumer can get starved of
+      // process() calls in some engines; route through a silent gain so
+      // the graph stays "active" without the user hearing anything.
+      const sink = this.ctx.createGain();
+      sink.gain.value = 0;
+      this.worklet.connect(sink).connect(this.ctx.destination);
+
+      this.worklet.port.onmessage = (event) => {
+        const msg = event.data;
+        if (msg.t === 'cross' && this.onDetect) this.onDetect(msg.freqIndex, msg.time, msg.mag);
+        else if (msg.t === 'levels' && this.onWorkletLevels) this.onWorkletLevels(msg);
+      };
+      this.workletReady = true;
+    } catch {
+      this.workletReady = false; // ranging.js falls back to rAF + analyser
+    }
   }
 
   async stop() {
+    if (this.worklet) {
+      try { this.worklet.port.onmessage = null; this.worklet.disconnect(); } catch { /* already gone */ }
+      this.worklet = null;
+    }
+    this.workletReady = false;
     if (this.stream) {
       for (const track of this.stream.getTracks()) track.stop();
       this.stream = null;
@@ -73,6 +121,13 @@ export class AudioEngine {
     this.analyser = null;
     this.floors.clear();
   }
+
+  configureWorklet({ freqs, mode, manualThreshold }) {
+    if (!this.worklet) return;
+    this.worklet.port.postMessage({ t: 'config', freqs, mode, manualThreshold });
+  }
+
+  // --- Fallback path (AnalyserNode + polling) ---
 
   // Refresh the FFT snapshot; call once per animation frame, then magAt().
   capture() {
@@ -104,6 +159,8 @@ export class AudioEngine {
   floorAt(freq) {
     return this.floors.get(freq) ?? 0;
   }
+
+  // --- Playback (shared by both paths) ---
 
   playTone(freq, when = 0) {
     if (!this.ctx) return;

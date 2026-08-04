@@ -58,11 +58,24 @@ export function createSmoother(windowSize = 5, alpha = 0.45) {
 }
 
 // ---- Protocol session (browser-only from here down) ----
+//
+// Detection runs one of two ways:
+//  - Worklet mode (engine.workletReady): the AudioWorklet in
+//    ranging-worklet.js does the signal detection on the real-time audio
+//    thread and posts 'cross' events timestamped in the AudioContext's own
+//    clock (ctx.currentTime). ping() and the resulting RTT stay entirely in
+//    that clock domain — no requestAnimationFrame involved in the timing at
+//    all, which is what actually determines accuracy (rAF ticks are ~16ms
+//    at best and can stretch to seconds when the tab backgrounds).
+//  - Polling fallback (older browsers without AudioWorklet): the original
+//    rAF + AnalyserNode loop, timestamped with performance.now().
+// Both paths funnel into the same _settleReading/_settleTimeout, so ping(),
+// calibrate() and the public callbacks behave identically either way.
 
 const RESPONDER_DEBOUNCE_MS = 350;
 const SEEKER_MIN_RTT_MS = 15;   // ignore triggers while our own chirp still rings
 const SEEKER_TIMEOUT_MS = 2500;
-const ADAPTIVE_MARGIN = 45;     // trigger = noiseFloor + margin
+const ADAPTIVE_MARGIN = 45;     // fallback-path trigger = noiseFloor + margin
 const MIN_ADAPTIVE_THRESHOLD = 90;
 
 export class RangingSession {
@@ -84,8 +97,10 @@ export class RangingSession {
     this._raf = null;
     this._running = false;
     this._awaiting = false;
-    this._pingStart = 0;
-    this._lastReplyAt = -Infinity;
+    this._pingStart = 0;        // performance.now() domain (fallback path)
+    this._pingStartAudio = 0;   // ctx.currentTime domain (worklet path)
+    this._lastReplyAt = -Infinity;      // performance.now() domain
+    this._lastReplyAtAudio = -Infinity; // ctx.currentTime domain
     this.replyCount = 0;
     this.lastRtt = null;
     this._calibrating = false;
@@ -105,17 +120,41 @@ export class RangingSession {
 
   setChannel(channel) {
     this.channel = channel;
+    this._configureWorklet();
+  }
+
+  _configureWorklet() {
+    if (!this.engine.workletReady) return;
+    const { seek, reply } = this.freqs;
+    this.engine.configureWorklet({
+      freqs: [seek, reply],
+      mode: this.adaptive ? 'adaptive' : 'manual',
+      manualThreshold: this.manualThreshold,
+    });
   }
 
   start() {
     if (this._running) return;
     this._running = true;
-    const loop = () => {
-      if (!this._running) return;
-      this._tick();
+
+    if (this.engine.workletReady) {
+      this._configureWorklet();
+      this.engine.onDetect = (freqIndex, audioTime) => this._onWorkletCross(freqIndex, audioTime);
+      this.engine.onWorkletLevels = (msg) => this._onWorkletLevels(msg);
+      const loop = () => {
+        if (!this._running) return;
+        this._checkTimeout();
+        this._raf = requestAnimationFrame(loop);
+      };
       this._raf = requestAnimationFrame(loop);
-    };
-    this._raf = requestAnimationFrame(loop);
+    } else {
+      const loop = () => {
+        if (!this._running) return;
+        this._tick();
+        this._raf = requestAnimationFrame(loop);
+      };
+      this._raf = requestAnimationFrame(loop);
+    }
   }
 
   stop() {
@@ -123,6 +162,48 @@ export class RangingSession {
     this._awaiting = false;
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = null;
+    this.engine.onDetect = null;
+    this.engine.onWorkletLevels = null;
+  }
+
+  // Worklet path: only a coarse "gave up waiting" check runs on rAF —
+  // it doesn't need tight precision, just to eventually notice a miss.
+  _checkTimeout() {
+    if (this.role === 'seeker' && this._awaiting) {
+      if (performance.now() - this._pingStart > SEEKER_TIMEOUT_MS) {
+        this._awaiting = false;
+        this._settleTimeout();
+      }
+    }
+  }
+
+  _onWorkletLevels(msg) {
+    if (!this.cb.onDebug) return;
+    this.cb.onDebug({
+      magSeek: msg.mags[0], magReply: msg.mags[1],
+      floorSeek: msg.floors[0], floorReply: msg.floors[1],
+      threshold: msg.thresholds[1],
+    });
+  }
+
+  // freqIndex 0 = this channel's seek frequency, 1 = its reply frequency
+  // (matches the order ping()/setChannel() configure the worklet with).
+  _onWorkletCross(freqIndex, audioTime) {
+    if (this.role === 'responder' && freqIndex === 0) {
+      if (audioTime - this._lastReplyAtAudio > RESPONDER_DEBOUNCE_MS / 1000) {
+        this._lastReplyAtAudio = audioTime;
+        this.replyCount++;
+        this.engine.playTone(this.freqs.reply);
+        if (this.cb.onReply) this.cb.onReply(this.replyCount);
+      }
+    } else if (this.role === 'seeker' && this._awaiting && freqIndex === 1) {
+      const elapsed = (audioTime - this._pingStartAudio) * 1000; // -> ms
+      if (elapsed > SEEKER_MIN_RTT_MS) {
+        this._awaiting = false;
+        this.lastRtt = elapsed;
+        this._settleReading(elapsed);
+      }
+    }
   }
 
   _tick() {
@@ -168,6 +249,7 @@ export class RangingSession {
   ping() {
     if (this.role !== 'seeker' || this._awaiting || !this.engine.active) return false;
     this._pingStart = performance.now();
+    this._pingStartAudio = this.engine.currentAudioTime;
     this._awaiting = true;
     this.engine.playTone(this.freqs.seek);
     return true;
