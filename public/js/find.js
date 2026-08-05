@@ -1,5 +1,12 @@
 // Find session controller: drives the acoustic engine + dial UI for both
 // local (offline, manual roles) and meetup (server-coordinated) modes.
+//
+// Meetup mode is bidirectional: both devices simultaneously Seek (on a
+// server-assigned channel) and Respond (on the other channel), so nobody
+// waits passively — see RangingSession's `bidirectional` option. Nearby
+// mode has no pairing channel to auto-assign complementary channels, so it
+// keeps the original either/or role picker to avoid two devices pinging on
+// the same frequency and colliding.
 import { t } from './i18n.js';
 import { connectWs } from './net.js';
 import { RangingSession, createSmoother, proximityBand, pickChannel, CHANNELS } from './ranging.js';
@@ -10,7 +17,8 @@ const DIAL_CIRCUMFERENCE = 2 * Math.PI * 88;
 const AUTO_PING_MS = 1600;
 const QUICK_KEYS = ['quick.here', 'quick.omw', 'quick.stay', 'quick.entrance', 'quick.twomin'];
 const GPS_SEND_MIN_INTERVAL_MS = 2500;
-const GPS_SUGGEST_THRESHOLD_M = 15;
+const SWITCH_TO_SOUND_M = 15;   // GPS margin below which we auto-switch to Precision
+const SWITCH_TO_GPS_M = 25;     // must drift back out past this before switching back (hysteresis)
 
 const state = {
   active: false,
@@ -26,6 +34,8 @@ const state = {
   peer: null,
   foundShown: false,
   leaving: false,
+  assignedChannel: null, // meetup: server-assigned complementary channel
+  gpsPhase: null,        // meetup: null (undecided) | 'gps' | 'sound'
   gps: {
     watchId: null,
     enabled: false,
@@ -33,6 +43,7 @@ const state = {
     peerFix: null,       // { lat, lon, accuracy }
     deviceHeading: null, // degrees, true north, or null if no compass
     lastSentAt: 0,
+    sendTimer: null,      // trailing-edge throttle: catches up once the window clears
     orientationHandler: null,
   },
 };
@@ -77,12 +88,13 @@ function haptic(pattern) {
   }
 }
 
+// Nearby mode only — the manual either/or role picker.
 function applyRoleUi(role) {
   $('find-role-name').textContent = t(role === 'seeker' ? 'role.seeker' : 'role.responder');
   $('seeker-controls').classList.toggle('hidden', role !== 'seeker');
   $('responder-panel').classList.toggle('hidden', role !== 'responder');
   const dialCenter = $('dial-distance');
-  if (role === 'responder' && state.mode === 'local') dialCenter.textContent = '👂';
+  if (role === 'responder') dialCenter.textContent = '👂';
   $('find-hint').textContent = role === 'seeker'
     ? t(state.session?.isCalibrated ? 'find.readyHint' : 'find.calibrateHint')
     : t('find.responderHint');
@@ -136,6 +148,19 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && !state.wakeLock) acquireWakeLock();
 });
 
+// ---------- Channel selection (meetup: server-assigned; local: Settings) ----------
+
+function applyChannelSelection(ctx, preferred) {
+  if (!ctx.engine.active || !preferred) return;
+  const usable = pickChannel(preferred, ctx.engine.sampleRate);
+  if (usable) {
+    if (usable !== preferred) ctx.toast(t('find.lowSampleRate'), 'warn', 5000);
+    state.session.setChannel(usable);
+  }
+  $('dbg-channel').textContent =
+    `${state.session.channel} (${CHANNELS[state.session.channel].seek / 1000}/${CHANNELS[state.session.channel].reply / 1000} kHz)`;
+}
+
 // ---------- GPS long-range phase (meetup mode only) ----------
 
 function formatDistance(meters) {
@@ -148,7 +173,63 @@ function setGpsStatus(key, live) {
   $('gps-status-text').textContent = t(key);
 }
 
-function updateGpsUi() {
+// Trailing-edge throttle for outbound position sends. A plain "send only if
+// the cooldown already elapsed" check silently drops any fix that arrives
+// mid-cooldown — and GPS routinely delivers a fast coarse fix immediately
+// followed by a refined one moments later, well within the 2.5s window.
+// Without a trailing send, that refined fix (and every fix after it, until
+// the position happens to change again) would just never reach the peer.
+function scheduleGpsSend(ctx) {
+  const now = performance.now();
+  const elapsed = now - state.gps.lastSentAt;
+  if (elapsed >= GPS_SEND_MIN_INTERVAL_MS) {
+    sendGpsFixNow();
+  } else if (!state.gps.sendTimer) {
+    state.gps.sendTimer = setTimeout(() => {
+      state.gps.sendTimer = null;
+      sendGpsFixNow();
+    }, GPS_SEND_MIN_INTERVAL_MS - elapsed);
+  }
+}
+
+function sendGpsFixNow() {
+  const fix = state.gps.selfFix;
+  if (!fix || state.mode !== 'meetup' || !state.ws) return;
+  state.gps.lastSentAt = performance.now();
+  state.ws.send({ t: 'gps', lat: fix.lat, lon: fix.lon, accuracy: fix.accuracy });
+}
+
+function switchPhase(ctx, phase) {
+  if (state.gpsPhase === phase) return;
+  const first = state.gpsPhase === null;
+  state.gpsPhase = phase;
+  $('gps-card').classList.toggle('find-secondary', phase === 'sound');
+  $('precision-card').classList.toggle('find-secondary', phase === 'gps');
+
+  if (first) return; // no toast/side-effects on the very first (silent) placement
+
+  if (phase === 'sound') {
+    ctx.toast(t('gps.switchedToSound'));
+    haptic([20, 40, 20]);
+    if (state.session?.isCalibrated && !state.autoOn) startAutoPing();
+  } else {
+    ctx.toast(t('gps.switchedToGps'), 'warn');
+    if (state.autoOn) stopAutoPing();
+  }
+}
+
+function evaluateAutoSwitch(ctx, distance, combinedAcc) {
+  const margin = distance - combinedAcc;
+  if (state.gpsPhase === null) {
+    switchPhase(ctx, margin <= SWITCH_TO_SOUND_M ? 'sound' : 'gps');
+  } else if (state.gpsPhase === 'gps' && margin <= SWITCH_TO_SOUND_M) {
+    switchPhase(ctx, 'sound');
+  } else if (state.gpsPhase === 'sound' && margin > SWITCH_TO_GPS_M) {
+    switchPhase(ctx, 'gps');
+  }
+}
+
+function updateGpsUi(ctx) {
   const { selfFix, peerFix, deviceHeading } = state.gps;
   if (!selfFix) return;
   if (!peerFix) { setGpsStatus('gps.selfOnly', false); return; }
@@ -166,11 +247,13 @@ function updateGpsUi() {
   $('compass-arrow').style.transform = `rotate(${rotate}deg)`;
   $('gps-heading-note').classList.toggle('hidden', deviceHeading !== null);
 
-  const suggest = shouldSuggestAcoustic(distance, combinedAcc, GPS_SUGGEST_THRESHOLD_M);
+  const suggest = shouldSuggestAcoustic(distance, combinedAcc, SWITCH_TO_SOUND_M);
   $('gps-suggest').classList.toggle('hidden', !suggest);
+
+  evaluateAutoSwitch(ctx, distance, combinedAcc);
 }
 
-function handleOrientation(event) {
+function handleOrientation(ctx, event) {
   let heading = null;
   if (typeof event.webkitCompassHeading === 'number') {
     heading = event.webkitCompassHeading; // iOS Safari: already true-north heading
@@ -179,7 +262,7 @@ function handleOrientation(event) {
   }
   if (heading === null) return;
   state.gps.deviceHeading = heading;
-  updateGpsUi();
+  updateGpsUi(ctx);
 }
 
 async function enableGps(ctx) {
@@ -190,34 +273,30 @@ async function enableGps(ctx) {
   $('gps-denied').classList.add('hidden');
   $('gps-live').classList.remove('hidden');
 
+  const onOrient = (event) => handleOrientation(ctx, event);
+
   // iOS gates DeviceOrientationEvent behind an explicit, gesture-synchronous
   // request; call it before anything async so the gesture is still "fresh".
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     try {
       const perm = await DeviceOrientationEvent.requestPermission();
-      if (perm === 'granted') window.addEventListener('deviceorientation', handleOrientation);
+      if (perm === 'granted') window.addEventListener('deviceorientation', onOrient);
     } catch { /* denied or unsupported: falls back to north-up */ }
   } else {
-    window.addEventListener('deviceorientationabsolute', handleOrientation);
-    window.addEventListener('deviceorientation', handleOrientation);
+    window.addEventListener('deviceorientationabsolute', onOrient);
+    window.addEventListener('deviceorientation', onOrient);
   }
-  state.gps.orientationHandler = handleOrientation;
+  state.gps.orientationHandler = onOrient;
 
   state.gps.watchId = navigator.geolocation.watchPosition(
     (pos) => {
-      const fix = {
+      state.gps.selfFix = {
         lat: pos.coords.latitude,
         lon: pos.coords.longitude,
         accuracy: pos.coords.accuracy || 50,
       };
-      state.gps.selfFix = fix;
-      updateGpsUi();
-
-      const now = performance.now();
-      if (state.mode === 'meetup' && state.ws && now - state.gps.lastSentAt > GPS_SEND_MIN_INTERVAL_MS) {
-        state.gps.lastSentAt = now;
-        state.ws.send({ t: 'gps', lat: fix.lat, lon: fix.lon, accuracy: fix.accuracy });
-      }
+      updateGpsUi(ctx);
+      scheduleGpsSend(ctx);
     },
     (err) => {
       if (err.code === err.PERMISSION_DENIED) {
@@ -233,14 +312,18 @@ async function enableGps(ctx) {
 
 function resetGps() {
   if (state.gps.watchId !== null) navigator.geolocation.clearWatch(state.gps.watchId);
+  if (state.gps.sendTimer) clearTimeout(state.gps.sendTimer);
   if (state.gps.orientationHandler) {
     window.removeEventListener('deviceorientation', state.gps.orientationHandler);
     window.removeEventListener('deviceorientationabsolute', state.gps.orientationHandler);
   }
   state.gps = {
     watchId: null, enabled: false, selfFix: null, peerFix: null,
-    deviceHeading: null, lastSentAt: 0, orientationHandler: null,
+    deviceHeading: null, lastSentAt: 0, sendTimer: null, orientationHandler: null,
   };
+  state.gpsPhase = null;
+  $('gps-card').classList.remove('find-secondary');
+  $('precision-card').classList.remove('find-secondary');
   $('gps-enable-row').classList.remove('hidden');
   $('gps-live').classList.add('hidden');
   $('gps-denied').classList.add('hidden');
@@ -264,16 +347,8 @@ async function startEngine(ctx) {
   ctx.setActivity('listening');
   $('dbg-samplerate').textContent = `${ctx.engine.sampleRate} Hz`;
 
-  const preferred = ctx.settings.channel;
-  const usable = pickChannel(preferred, ctx.engine.sampleRate);
-  if (usable && usable !== preferred) {
-    ctx.toast(t('find.lowSampleRate'), 'warn', 5000);
-    state.session.setChannel(usable);
-  } else if (usable) {
-    state.session.setChannel(usable);
-  }
-  $('dbg-channel').textContent =
-    `${state.session.channel} (${CHANNELS[state.session.channel].seek / 1000}/${CHANNELS[state.session.channel].reply / 1000} kHz)`;
+  const preferred = state.mode === 'meetup' ? (state.assignedChannel || ctx.settings.channel) : ctx.settings.channel;
+  applyChannelSelection(ctx, preferred);
   state.session.start();
 
   if (/iPhone|iPad/.test(navigator.userAgent)) ctx.toast(t('find.silentModeHint'), 'info', 6000);
@@ -331,8 +406,8 @@ function connectRoom(ctx) {
     onMessage(msg) {
       switch (msg.t) {
         case 'joined':
-          state.session.setRole(msg.self.role);
-          applyRoleUi(msg.self.role);
+          state.assignedChannel = msg.self.channel;
+          applyChannelSelection(ctx, msg.self.channel);
           if (msg.peer) setPeer(msg.peer);
           else {
             $('find-share-card').classList.remove('hidden');
@@ -348,23 +423,13 @@ function connectRoom(ctx) {
           $('find-peer').textContent = t('find.peerLeft');
           $('btn-found').classList.add('hidden');
           break;
-        case 'roles':
-          state.session.setRole(msg.self);
-          applyRoleUi(msg.self);
-          break;
-        case 'reading':
-          // Peer (seeker) shares its computed distance so both screens agree.
-          if (state.session.role === 'responder' && Number.isFinite(msg.distance)) {
-            setDial(msg.distance);
-          }
-          break;
         case 'quick':
           ctx.toast(`${msg.from}: ${msg.text}`, 'info', 4000);
           haptic([20, 40, 20]);
           break;
         case 'gps':
           state.gps.peerFix = { lat: msg.lat, lon: msg.lon, accuracy: msg.accuracy };
-          updateGpsUi();
+          updateGpsUi(ctx);
           break;
         case 'found':
           state.foundShown = true;
@@ -390,6 +455,7 @@ function connectRoom(ctx) {
 function setPeer(peer) {
   state.peer = peer;
   $('find-peer').textContent = `${peer.emoji || '👤'} ${peer.name} — ${t('find.peerJoined')}`;
+  $('bidir-peer-name').textContent = peer.name;
   $('find-share-card').classList.add('hidden');
   $('btn-found').classList.remove('hidden');
 }
@@ -437,6 +503,7 @@ export async function enterFind(ctx, opts) {
   state.peer = null;
   state.foundShown = false;
   state.prevSmoothed = null;
+  state.assignedChannel = null;
   state.smoother.reset();
 
   // Reset UI
@@ -448,6 +515,7 @@ export async function enterFind(ctx, opts) {
   $('btn-ping').disabled = true;
   $('btn-autoping').disabled = true;
   $('reply-count').textContent = '0';
+  $('reply-count-bidir').textContent = '0';
   $('dbg-rtt').textContent = '—';
   $('dbg-offset').textContent = '—';
   $('find-share-card').classList.add('hidden');
@@ -458,9 +526,11 @@ export async function enterFind(ctx, opts) {
   $('find-mode-label').textContent = t(isMeetup ? 'find.meetup' : 'find.local');
   $('find-peer').textContent = isMeetup ? t('find.waitingPeer') : '';
   $('find-conn').classList.toggle('hidden', !isMeetup);
-  $('local-role-toggle').classList.toggle('hidden', isMeetup);
-  $('btn-swap').classList.toggle('hidden', !isMeetup);
   $('quick-card').classList.toggle('hidden', !isMeetup);
+  $('role-row').classList.toggle('hidden', isMeetup);
+  $('local-role-toggle').classList.toggle('hidden', isMeetup);
+  $('bidir-status').classList.toggle('hidden', !isMeetup);
+  $('responder-panel').classList.toggle('hidden', true); // re-shown by applyRoleUi in local mode only
 
   // GPS long-range phase only makes sense in meetup mode — it needs the
   // peer channel Nearby mode doesn't have.
@@ -472,6 +542,7 @@ export async function enterFind(ctx, opts) {
 
   state.session = new RangingSession(ctx.engine, {
     channel: ctx.settings.channel,
+    bidirectional: isMeetup,
     adaptive: ctx.settings.adaptive,
     manualThreshold: ctx.settings.threshold,
     onReading(rtt, distance) {
@@ -484,7 +555,9 @@ export async function enterFind(ctx, opts) {
         ctx.engine.playTick(500 + Math.max(0, 15 - smoothed) * 60);
       }
       if (isMeetup && state.ws) {
-        state.ws.send({ t: 'reading', rtt, distance: Math.round(smoothed * 10) / 10 });
+        // Each device now measures its own distance independently (both
+        // seek simultaneously); this just feeds the meetup's history stat.
+        state.ws.send({ t: 'reading', distance: Math.round(smoothed * 10) / 10 });
       }
     },
     onTimeout() {
@@ -492,6 +565,7 @@ export async function enterFind(ctx, opts) {
     },
     onReply(count) {
       $('reply-count').textContent = String(count);
+      $('reply-count-bidir').textContent = String(count);
       if (ctx.settings.soundFx) ctx.engine.playTick(700);
       haptic([15]);
     },
@@ -517,7 +591,6 @@ export async function enterFind(ctx, opts) {
   $('role-btn-responder').onclick = async () => {
     if (await startEngine(ctx)) { state.session.setRole('responder'); applyRoleUi('responder'); }
   };
-  $('btn-swap').onclick = () => state.ws?.send({ t: 'swap' });
   $('btn-found').onclick = () => state.ws?.send({ t: 'found' });
   $('btn-end').onclick = () => {
     if (isMeetup) state.ws?.send({ t: 'end' });
@@ -534,12 +607,19 @@ export async function enterFind(ctx, opts) {
     quickRow.appendChild(btn);
   }
 
-  applyRoleUi('seeker');
+  if (isMeetup) {
+    // Bidirectional: seeker-controls (Calibrate/Ping/Live) and the compact
+    // "also listening" line are both always shown — no single role.
+    $('seeker-controls').classList.remove('hidden');
+    $('find-hint').textContent = t('find.calibrateHint');
+  } else {
+    applyRoleUi('seeker'); // Nearby mode default; user may flip the toggle
+  }
   acquireWakeLock();
 
   if (isMeetup) {
     connectRoom(ctx);
-    // Meetup responders need the mic immediately; seekers when they calibrate.
+    // Both devices need the mic immediately — everyone is a Responder now.
     startEngine(ctx);
   } else {
     // Local mode: seeker by default; user may flip the toggle.

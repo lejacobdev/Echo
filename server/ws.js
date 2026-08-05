@@ -1,6 +1,9 @@
 // Zero-dependency WebSocket server (RFC 6455) + Echo's realtime hub:
 //  - presence connections for signed-in users (online status, invites, requests)
-//  - meetup rooms (max 2 members) that relay roles, phases, readings and quick messages
+//  - meetup rooms (max 2 members): both members are simultaneously Seeker
+//    and Responder, each assigned a complementary transmit channel (A/B) so
+//    their pings never collide; the room relays phases, GPS fixes and quick
+//    messages
 import crypto from 'node:crypto';
 import { parseCookies, getSessionUser } from './auth.js';
 
@@ -124,7 +127,7 @@ class Conn {
 
 export function createHub(store) {
   const presence = new Map();   // userId -> Set<Conn>
-  const rooms = new Map();      // code -> { members: [{ conn, ident, role }], best, phase }
+  const rooms = new Map();      // code -> { members: [{ conn, ident, channel }], best, phase }
   const guestTokens = new Map(); // token -> { code, name, exp }
 
   function publicUser(u) {
@@ -261,26 +264,29 @@ export function createHub(store) {
       return;
     }
 
-    // Roles must always be complementary: with a peer present, take the
-    // opposite role; alone, a rejoiner keeps its old role, otherwise the
-    // creator seeks and anyone else responds.
+    // Transmit channels must always be complementary: with a peer present,
+    // take the channel they aren't using; alone, a rejoiner keeps its old
+    // channel, otherwise the creator gets A and anyone else gets B. Both
+    // members ping *and* respond simultaneously — the channel split exists
+    // purely so the two devices' own outbound chirps never land on the same
+    // frequency and get confused for each other's reply.
     const isCreator = meetup.createdBy.kind === ident.kind && meetup.createdBy.id === ident.id;
     const peerNow = room.members[0] || null;
-    const role = peerNow ? (peerNow.role === 'seeker' ? 'responder' : 'seeker')
-      : existing ? existing.role
-      : isCreator ? 'seeker' : 'responder';
-    const member = { conn, ident, role };
+    const channel = peerNow ? (peerNow.channel === 'A' ? 'B' : 'A')
+      : existing ? existing.channel
+      : isCreator ? 'A' : 'B';
+    const member = { conn, ident, channel };
     room.members.push(member);
 
     const peer = room.members.find((mb) => mb !== member) || null;
     conn.send({
       t: 'joined',
       code,
-      self: { ...identPublic(member.ident), role: member.role },
-      peer: peer ? { ...identPublic(peer.ident), role: peer.role } : null,
+      self: { ...identPublic(member.ident), channel: member.channel },
+      peer: peer ? { ...identPublic(peer.ident), channel: peer.channel } : null,
       phase: room.phase,
     });
-    if (peer) peer.conn.send({ t: 'peer-joined', peer: { ...identPublic(member.ident), role: member.role } });
+    if (peer) peer.conn.send({ t: 'peer-joined', peer: { ...identPublic(member.ident), channel: member.channel } });
 
     conn.onmessage = (msg) => handleRoomMessage(code, member, msg);
     conn.onclose = () => {
@@ -302,14 +308,6 @@ export function createHub(store) {
     const peer = room.members.find((mb) => mb !== member) || null;
 
     switch (msg.t) {
-      case 'swap': {
-        for (const mb of room.members) mb.role = mb.role === 'seeker' ? 'responder' : 'seeker';
-        for (const mb of room.members) {
-          const p = room.members.find((x) => x !== mb);
-          mb.conn.send({ t: 'roles', self: mb.role, peer: p ? p.role : null });
-        }
-        break;
-      }
       case 'phase': {
         if (['lobby', 'calibrating', 'finding'].includes(msg.phase)) {
           room.phase = msg.phase;
@@ -318,10 +316,12 @@ export function createHub(store) {
         break;
       }
       case 'reading': {
+        // Each member now measures its own distance independently (both
+        // are always seeking); this only feeds the meetup's "closest ever"
+        // stat for history, nothing is mirrored back to the peer.
         const d = Number(msg.distance);
         if (Number.isFinite(d) && d >= 0 && d < 1000) {
           if (room.best === null || d < room.best) room.best = Math.round(d * 10) / 10;
-          if (peer) peer.conn.send({ t: 'reading', distance: d, rtt: Number(msg.rtt) || null });
         }
         break;
       }

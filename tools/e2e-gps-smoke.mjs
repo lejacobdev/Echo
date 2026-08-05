@@ -111,6 +111,50 @@ const suggestHidden = await alice.evaluate(() => document.getElementById('gps-su
 assert(suggestHidden, 'suggest-switch banner should stay hidden at 44m');
 console.log('✓ switch-to-acoustic banner correctly suppressed while still far apart');
 
+// Auto-switch: far apart, GPS should be the visually primary card and
+// Precision (sound) secondary — the reverse of what happens once close.
+const farPhase = await alice.evaluate(() => ({
+  gpsSecondary: document.getElementById('gps-card').classList.contains('find-secondary'),
+  precisionSecondary: document.getElementById('precision-card').classList.contains('find-secondary'),
+}));
+assert(!farPhase.gpsSecondary && farPhase.precisionSecondary, 'far apart: GPS primary, Precision secondary');
+console.log('✓ far apart: GPS card primary, Precision card auto-demoted');
+
+// Walk them together (well inside the 15m switch-to-sound threshold) and
+// confirm the auto-switch to Precision fires on both sides, with a toast.
+await alice.context().setGeolocation({ ...A, accuracy: 5 });
+await bob.context().setGeolocation({ ...A, accuracy: 5 });
+await alice.waitForFunction(
+  () => document.getElementById('gps-card').classList.contains('find-secondary'),
+  null, { timeout: 10000 }
+);
+await bob.waitForFunction(
+  () => document.getElementById('gps-card').classList.contains('find-secondary'),
+  null, { timeout: 10000 }
+);
+const closePhase = await alice.evaluate(() => ({
+  gpsSecondary: document.getElementById('gps-card').classList.contains('find-secondary'),
+  precisionSecondary: document.getElementById('precision-card').classList.contains('find-secondary'),
+}));
+assert(closePhase.gpsSecondary && !closePhase.precisionSecondary, 'close: GPS secondary, Precision primary');
+await alice.waitForSelector('.toast', { timeout: 3000 });
+console.log('✓ auto-switched to Precision find on both devices once close, with a toast');
+
+// Walk back apart past the (wider, hysteresis) 25m switch-back threshold
+// and confirm it flips back to GPS-primary.
+await alice.context().setGeolocation({ ...A, accuracy: 5 });
+await bob.context().setGeolocation({ ...B, accuracy: 5 });
+await alice.waitForFunction(
+  () => !document.getElementById('gps-card').classList.contains('find-secondary'),
+  null, { timeout: 10000 }
+);
+const backToFar = await alice.evaluate(() => ({
+  gpsSecondary: document.getElementById('gps-card').classList.contains('find-secondary'),
+  precisionSecondary: document.getElementById('precision-card').classList.contains('find-secondary'),
+}));
+assert(!backToFar.gpsSecondary && backToFar.precisionSecondary, 'back apart: GPS primary again, Precision secondary again');
+console.log('✓ auto-switched back to GPS once far apart again (hysteresis correctly avoided flapping)');
+
 if (errors.length) {
   console.error('CONSOLE/PAGE ERRORS:');
   for (const e of errors) console.error(' -', e);

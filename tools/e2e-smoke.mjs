@@ -1,8 +1,9 @@
 // End-to-end smoke test with a real browser (requires Playwright + Chromium).
 // Run: node tools/e2e-smoke.mjs   (set ECHO_CHROMIUM to your Chromium binary if needed)
 // Covers: home -> signup x2 -> friend request/accept -> meetup invite over the
-// presence socket -> both phones in the find room with complementary roles ->
-// quick message relay -> end session. Also checks for console errors.
+// presence socket -> both phones bidirectionally seeking+responding on
+// complementary channels -> quick message relay -> end session. Also checks
+// for console errors.
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,21 +82,19 @@ await bob.click('#invite-accept');
 await bob.waitForSelector('#view-find:not(.hidden)');
 console.log('✓ invite delivered over presence socket and accepted');
 
-// --- Roles must be complementary; peer names shown ---
+// --- Peer names shown; both devices bidirectionally seek+respond (no
+//     single "role" concept in meetup mode anymore) ---
 await alice.waitForFunction(() => document.getElementById('find-peer').textContent.includes('Bob'), null, { timeout: 5000 });
 await bob.waitForFunction(() => document.getElementById('find-peer').textContent.includes('Alice'), null, { timeout: 5000 });
-const roleA = await alice.textContent('#find-role-name');
-const roleB = await bob.textContent('#find-role-name');
-assert(roleA !== roleB, `roles must differ, both are ${roleA}`);
-console.log(`✓ roles assigned: alice=${roleA} bob=${roleB}`);
-
-// --- Swap roles ---
-await alice.click('#btn-swap');
-await alice.waitForFunction(
-  (prev) => document.getElementById('find-role-name').textContent !== prev,
-  roleA, { timeout: 5000 }
-);
-console.log('✓ role swap round-trips');
+assert(await alice.isHidden('#role-row'), 'meetup mode has no single-role display');
+assert(await alice.isVisible('#seeker-controls'), 'seeker-controls (Calibrate/Ping/Live) shown for both sides');
+assert(await bob.isVisible('#seeker-controls'), 'seeker-controls (Calibrate/Ping/Live) shown for both sides');
+assert(await alice.isVisible('#bidir-status'), '"also listening" status shown for both sides');
+assert(await bob.isVisible('#bidir-status'), '"also listening" status shown for both sides');
+const bidirPeerA = await alice.textContent('#bidir-peer-name');
+const bidirPeerB = await bob.textContent('#bidir-peer-name');
+assert(bidirPeerA === 'Bob' && bidirPeerB === 'Alice', `bidir-status should name the peer, got "${bidirPeerA}"/"${bidirPeerB}"`);
+console.log('✓ both devices bidirectionally seeking+responding, no swap/role concept left');
 
 // --- Quick message relay ---
 await alice.click('#quick-buttons button');
@@ -105,10 +104,9 @@ console.log('✓ quick message relayed');
 // --- Mic pill active, debug toggle, calibration overlay opens ---
 const pill = await alice.textContent('#activity-pill');
 assert(pill.length > 0, 'activity pill rendered');
-const seeker = (await alice.textContent('#find-role-name')) === 'Seeker' ? alice : bob;
-await seeker.click('#btn-calibrate');
-await seeker.waitForSelector('#calib-overlay:not(.hidden)');
-await seeker.click('#calib-cancel');
+await alice.click('#btn-calibrate');
+await alice.waitForSelector('#calib-overlay:not(.hidden)');
+await alice.click('#calib-cancel');
 console.log('✓ calibration overlay opens and closes');
 
 // --- End session from Alice; Bob sees it end too ---

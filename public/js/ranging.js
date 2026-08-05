@@ -94,12 +94,22 @@ const MIN_ADAPTIVE_THRESHOLD = 90;
 export class RangingSession {
   /**
    * @param {import('./audio.js').AudioEngine} engine
-   * @param {object} opts { channel, adaptive, manualThreshold, onReading, onTimeout,
-   *                        onReply, onDebug, onCalibProgress }
+   * @param {object} opts { channel, bidirectional, adaptive, manualThreshold,
+   *                        onReading, onTimeout, onReply, onDebug, onCalibProgress }
+   *
+   * `bidirectional: true` (meetups) makes this device simultaneously Seek
+   * on `channel` and Respond on the other channel, continuously — both
+   * sides of a meetup get a live reading with nobody waiting passively.
+   * `bidirectional: false` (default; Nearby mode) keeps the original
+   * either/or behavior driven by `setRole()`, since Nearby mode has no
+   * pairing channel to auto-assign complementary transmit channels and a
+   * manual role pick is what prevents both devices pinging on the same
+   * frequency and colliding.
    */
   constructor(engine, opts = {}) {
     this.engine = engine;
     this.role = 'seeker';
+    this.bidirectional = opts.bidirectional === true;
     this.channel = opts.channel || 'A';
     this.adaptive = opts.adaptive !== false;
     this.manualThreshold = opts.manualThreshold || 165;
@@ -120,6 +130,7 @@ export class RangingSession {
   }
 
   get freqs() { return CHANNELS[this.channel]; }
+  get otherChannel() { return this.channel === 'A' ? 'B' : 'A'; }
 
   threshold(freq) {
     if (!this.adaptive) return this.manualThreshold;
@@ -183,7 +194,8 @@ export class RangingSession {
   // Worklet path: only a coarse "gave up waiting" check runs on rAF —
   // it doesn't need tight precision, just to eventually notice a miss.
   _checkTimeout() {
-    if (this.role === 'seeker' && this._awaiting) {
+    const iSeek = this.bidirectional || this.role === 'seeker';
+    if (iSeek && this._awaiting) {
       if (performance.now() - this._pingStart > SEEKER_TIMEOUT_MS) {
         this._awaiting = false;
         this._settleTimeout();
@@ -203,28 +215,51 @@ export class RangingSession {
     });
   }
 
+  _replyOnAudio(channel, audioTime) {
+    if (audioTime - this._lastReplyAtAudio > RESPONDER_DEBOUNCE_MS / 1000) {
+      this._lastReplyAtAudio = audioTime;
+      this.replyCount++;
+      this.engine.playTone(CHANNELS[channel].reply);
+      if (this.cb.onReply) this.cb.onReply(this.replyCount);
+    }
+  }
+
+  _acceptReplyAudio(audioTime) {
+    const elapsed = (audioTime - this._pingStartAudio) * 1000; // -> ms
+    if (elapsed > SEEKER_MIN_RTT_MS) {
+      this._awaiting = false;
+      this.lastRtt = elapsed;
+      this._settleReading(elapsed);
+    }
+  }
+
   // freqIndex indexes FREQ_SLOTS: 0/1 = channel A seek/reply, 2/3 = channel
-  // B seek/reply. A Responder reacts to a seek index on *either* channel
-  // and replies in kind; a Seeker only accepts a reply on the channel it
-  // actually transmitted on.
+  // B seek/reply.
+  //  - Bidirectional (meetups): this device is always Seeking on `channel`
+  //    and always Responding on `otherChannel`, simultaneously — the two
+  //    devices' own outbound chirps live on different frequencies by
+  //    construction, so there's no ambiguity about whose reply is whose.
+  //  - Directional (Nearby mode): exactly one role is active for the whole
+  //    session. A Responder reacts to a seek on *either* channel (so two
+  //    devices with mismatched local settings still find each other) and a
+  //    Seeker only accepts a reply on the channel it actually transmitted on.
   _onWorkletCross(freqIndex, audioTime) {
     const slot = FREQ_SLOTS[freqIndex];
     if (!slot) return;
 
+    if (this.bidirectional) {
+      if (slot.kind === 'seek' && slot.channel === this.otherChannel) {
+        this._replyOnAudio(slot.channel, audioTime);
+      } else if (this._awaiting && slot.kind === 'reply' && slot.channel === this.channel) {
+        this._acceptReplyAudio(audioTime);
+      }
+      return;
+    }
+
     if (this.role === 'responder' && slot.kind === 'seek') {
-      if (audioTime - this._lastReplyAtAudio > RESPONDER_DEBOUNCE_MS / 1000) {
-        this._lastReplyAtAudio = audioTime;
-        this.replyCount++;
-        this.engine.playTone(CHANNELS[slot.channel].reply);
-        if (this.cb.onReply) this.cb.onReply(this.replyCount);
-      }
+      this._replyOnAudio(slot.channel, audioTime);
     } else if (this.role === 'seeker' && this._awaiting && slot.kind === 'reply' && slot.channel === this.channel) {
-      const elapsed = (audioTime - this._pingStartAudio) * 1000; // -> ms
-      if (elapsed > SEEKER_MIN_RTT_MS) {
-        this._awaiting = false;
-        this.lastRtt = elapsed;
-        this._settleReading(elapsed);
-      }
+      this._acceptReplyAudio(audioTime);
     }
   }
 
@@ -233,9 +268,9 @@ export class RangingSession {
     if (!engine.active) return;
     engine.capture();
 
-    // Same "listen on both channels" fix as the worklet path: a Responder
-    // must never miss a Seeker just because their local channel settings
-    // don't match.
+    // Same "listen on both channels" as the worklet path — computed
+    // unconditionally since both bidirectional and directional-Responder
+    // modes need it.
     const mags = {};
     for (const slot of FREQ_SLOTS) {
       const m = engine.magAt(slot.freq);
@@ -244,18 +279,22 @@ export class RangingSession {
     }
     const now = performance.now();
 
-    if (this.role === 'responder') {
-      for (const ch of ['A', 'B']) {
-        const seekFreq = CHANNELS[ch].seek;
-        if (mags[`${ch}seek`] > this.threshold(seekFreq) && now - this._lastReplyAt > RESPONDER_DEBOUNCE_MS) {
-          this._lastReplyAt = now;
-          this.replyCount++;
-          engine.playTone(CHANNELS[ch].reply);
-          if (this.cb.onReply) this.cb.onReply(this.replyCount);
-          break; // one reply per tick even if both somehow spike at once
-        }
+    const respondToChannel = this.bidirectional ? this.otherChannel : (this.role === 'responder' ? null : undefined);
+    // null (directional responder) = try both; a channel letter = try only that one; undefined = don't respond at all.
+    const candidates = respondToChannel === null ? ['A', 'B'] : respondToChannel ? [respondToChannel] : [];
+    for (const ch of candidates) {
+      const seekFreq = CHANNELS[ch].seek;
+      if (mags[`${ch}seek`] > this.threshold(seekFreq) && now - this._lastReplyAt > RESPONDER_DEBOUNCE_MS) {
+        this._lastReplyAt = now;
+        this.replyCount++;
+        engine.playTone(CHANNELS[ch].reply);
+        if (this.cb.onReply) this.cb.onReply(this.replyCount);
+        break; // one reply per tick even if both somehow spike at once
       }
-    } else if (this._awaiting) {
+    }
+
+    const iSeek = this.bidirectional || this.role === 'seeker';
+    if (iSeek && this._awaiting) {
       const { reply } = this.freqs; // only accept a reply on our own channel
       const myReplyMag = mags[`${this.channel}reply`];
       const elapsed = now - this._pingStart;
@@ -281,7 +320,8 @@ export class RangingSession {
   }
 
   ping() {
-    if (this.role !== 'seeker' || this._awaiting || !this.engine.active) return false;
+    if (!this.bidirectional && this.role !== 'seeker') return false;
+    if (this._awaiting || !this.engine.active) return false;
     this._pingStart = performance.now();
     this._pingStartAudio = this.engine.currentAudioTime;
     this._awaiting = true;
@@ -304,7 +344,7 @@ export class RangingSession {
 
   // Run `rounds` pings at distance zero; median of successes becomes the offset.
   async calibrate(rounds = 5) {
-    if (this.role !== 'seeker') throw new Error('only the seeker calibrates');
+    if (!this.bidirectional && this.role !== 'seeker') throw new Error('only the seeker calibrates');
     this._calibrating = true;
     const results = [];
     try {

@@ -132,7 +132,7 @@ test('meetup requires friendship for direct invites', async () => {
   assert.equal(res.status, 403);
 });
 
-test('meetup create + user/guest join + full room + role assignment over WS', async () => {
+test('meetup create + user/guest join + full room + complementary channel assignment over WS', async () => {
   const created = await alice.call('/api/meetups', 'POST', {});
   assert.equal(created.status, 201);
   const { code } = created.data;
@@ -147,22 +147,25 @@ test('meetup create + user/guest join + full room + role assignment over WS', as
   // Bad code 404s
   assert.equal((await client().call('/api/meetups/join', 'POST', { code: 'ZZZZZZ', guestName: 'X' })).status, 404);
 
-  // Alice (creator) connects -> seeker
+  // Alice (creator) connects -> channel A
   const wsAlice = await wsConnect(port, `/ws?code=${code}`, alice.cookie);
   const joinedA = await wsAlice.next();
   assert.equal(joinedA.t, 'joined');
-  assert.equal(joinedA.self.role, 'seeker');
+  assert.equal(joinedA.self.channel, 'A');
   assert.equal(joinedA.peer, null);
 
-  // Guest connects -> responder; Alice notified
+  // Guest connects -> complementary channel B; Alice notified. Both
+  // members are simultaneously Seeker and Responder now (bidirectional),
+  // so there's no 'role' concept left to assert on server-side either.
   const wsGuest = await wsConnect(port, `/ws?code=${code}&token=${guestJoin.data.wsToken}`);
   const joinedG = await wsGuest.next();
   assert.equal(joinedG.t, 'joined');
-  assert.equal(joinedG.self.role, 'responder');
-  assert.equal(joinedG.peer.role, 'seeker');
+  assert.equal(joinedG.self.channel, 'B');
+  assert.equal(joinedG.peer.channel, 'A');
   const peerJoined = await wsAlice.next();
   assert.equal(peerJoined.t, 'peer-joined');
   assert.equal(peerJoined.peer.name, 'Guest Gal');
+  assert.equal(peerJoined.peer.channel, 'B');
 
   // Third connection is refused
   const bobJoin = await bob.call('/api/meetups/join', 'POST', { code });
@@ -172,19 +175,15 @@ test('meetup create + user/guest join + full room + role assignment over WS', as
   assert.equal(full.t, 'error');
   assert.equal(full.error, 'meetup_full');
 
-  // Swap flips both roles
-  wsAlice.send({ t: 'swap' });
-  const rolesA = await wsAlice.next();
-  const rolesG = await wsGuest.next();
-  assert.equal(rolesA.t, 'roles');
-  assert.equal(rolesA.self, 'responder');
-  assert.equal(rolesG.self, 'seeker');
-
-  // Readings relay seeker -> responder
-  wsGuest.send({ t: 'reading', rtt: 120.5, distance: 4.2 });
-  const reading = await wsAlice.next();
-  assert.equal(reading.t, 'reading');
-  assert.equal(reading.distance, 4.2);
+  // Each member now measures its own reading independently — nothing is
+  // relayed back to the peer, it only feeds the meetup's "closest" stat.
+  // Since WS delivery preserves per-connection order, if wsAlice's next
+  // message is the sentinel (not a 'reading' relay), no relay was sent.
+  wsGuest.send({ t: 'reading', distance: 4.2 });
+  wsGuest.send({ t: 'quick', text: 'sentinel-after-reading' });
+  const sentinelAfterReading = await wsAlice.next();
+  assert.equal(sentinelAfterReading.t, 'quick');
+  assert.equal(sentinelAfterReading.text, 'sentinel-after-reading');
 
   // Quick message relay
   wsAlice.send({ t: 'quick', text: 'On my way' });

@@ -32,8 +32,16 @@ with no account** ("Nearby mode").
   `public/js/geo.js`, unit tested)
 - Honest about GPS uncertainty by design: shows a combined accuracy radius
   (root-sum-square of both devices' reported accuracy) rather than a falsely
-  precise single number, and suggests switching to acoustic only when the
-  distance-minus-accuracy margin plausibly puts you in its working range
+  precise single number
+- **Auto-switches between GPS and Precision find** as the distance changes,
+  with hysteresis so it doesn't flap back and forth near the boundary: once
+  the distance-minus-accuracy margin drops to 15m the Precision (sound) card
+  becomes primary (GPS visually demotes but keeps tracking in the
+  background, in case you're wrong and still too far); it only switches back
+  to GPS-primary once you drift back out past 25m. If you're already
+  calibrated when it switches to sound, Live continuous ping starts
+  automatically too; if you drift back apart, Live stops rather than
+  wasting pings at a range acoustic can't realistically cover
 - Compass arrow rotates with device heading when available (`deviceorientation`
   / iOS's `webkitCompassHeading`, permission-gated on iOS 13+); falls back to
   a north-up arrow with a visible note when no heading is available
@@ -50,9 +58,11 @@ with no account** ("Nearby mode").
 - Meetups: one-tap "Find" invites to online friends (realtime via WebSocket),
   shareable 6-character codes, deep links (`/j/CODE`), QR codes (generated
   in-house, zero deps), guest joining without an account
-- Live sessions: automatic complementary role assignment (Seeker/Responder),
-  role swap, both phones see the same live distance, preset quick messages
-  ("I'm here", "On my way", …), found-each-other celebration, meetup history
+- Live sessions: **bidirectional ranging** — both phones simultaneously Seek
+  and Respond (server-assigned complementary channels prevent collisions), so
+  nobody waits passively and each side gets its own live reading; preset
+  quick messages ("I'm here", "On my way", …), found-each-other celebration,
+  meetup history
 - System notifications for invites when the tab is in the background
 
 **Platform**
@@ -92,22 +102,38 @@ Environment variables: `PORT` (default 8080), `HOST` (default 0.0.0.0),
 
 ## How the ranging protocol works
 
-Two roles per session, assigned automatically in meetups or manually in
-Nearby mode:
+**Meetup mode is bidirectional**: both phones are simultaneously Seeker and
+Responder — nobody waits passively, and each side gets its own continuously
+updating reading. This needs a way to stop the two devices' own outbound
+pings from colliding on the same frequency, which is what the two frequency
+channels are actually for: on joining a meetup room, the server assigns each
+device a complementary channel (creator gets A, the other gets B). Each
+device then:
 
-1. The **Seeker** plays a short (~80 ms) near-inaudible sine burst at the
-   channel's *seek* frequency, with a fade-in/out envelope to avoid clicks,
-   and starts a `performance.now()` timer.
-2. The **Responder** listens continuously (`AnalyserNode`, FFT 4096, with
-   `echoCancellation`/`noiseSuppression`/`autoGainControl` all disabled —
-   voice processing would suppress the narrow ultrasonic band). When the seek
-   frequency spikes above the detection threshold, it instantly replies with
-   its own burst at the *reply* frequency. Distinct frequencies stop the
-   Seeker from mistaking its own reverb tail for the reply. A 350 ms debounce
-   stops the Responder re-triggering on room echo.
-3. The Seeker detects the reply and stops the timer — that's the round-trip
-   time (RTT).
-4. Distance:
+1. **Seeks on its own channel** — plays a short (~80 ms) near-inaudible sine
+   burst at that channel's *seek* frequency, with a fade-in/out envelope to
+   avoid clicks, and starts a timer.
+2. **Simultaneously Responds on the *other* channel** — listens continuously
+   for the other device's seek frequency and instantly replies with a burst
+   at that channel's *reply* frequency the moment it's heard.
+3. Accepts a reply only on the frequency it actually transmitted on (its own
+   channel's reply frequency), so the two devices' independent round trips
+   never get confused for each other's — verified directly in
+   `tests/bidirectional.test.js`, which drives two sessions through a
+   simulated simultaneous ping with the "air" between them wired together in
+   code.
+
+**Nearby mode has no pairing channel** to auto-assign complementary
+channels, so it keeps the original either/or role picker instead — pick
+**Seeker** on one phone and **Responder** on the other by hand, same as
+before, to avoid two devices pinging on the same frequency and colliding.
+
+Either way, detection uses an `AudioWorklet` (or `AnalyserNode` fallback,
+see below) with `echoCancellation`/`noiseSuppression`/`autoGainControl` all
+disabled — voice processing would suppress the narrow ultrasonic band. A
+350 ms debounce stops a Responder re-triggering on room echo. Once a Seeker
+hears its reply, it stops the timer — that's the round-trip time (RTT) — and
+distance follows:
 
    ```
    distance ≈ ((RTT − calibrationOffset) / 1000) × 343 m/s ÷ 2
@@ -117,7 +143,11 @@ Nearby mode:
 of milliseconds and differs per device pair — it would dominate the actual
 acoustic travel time (~2.9 ms per meter of separation). Calibration runs the
 same protocol 5 times with the phones touching (distance ≈ 0) and stores the
-median RTT as the offset for the session.
+median RTT as the offset for the session. In meetup mode, tap Calibrate on
+*both* phones while they're touching — since both devices seek on their own
+channel simultaneously, each one independently measures and stores its own
+offset in the same round of touching, rather than needing a separate pass
+per device.
 
 The detection threshold adapts to the ambient noise floor at each target
 frequency (slow EMA, frozen during spikes so chirps don't inflate it); the
@@ -224,8 +254,10 @@ tests/               # node --test: API+WS integration, ranging math, QR
 
 The WebSocket protocol: clients connect to `/ws` (presence, signed-in users)
 or `/ws?code=XXXXXX` (meetup rooms, cookie- or guest-token-authenticated).
-Rooms hold max two members, relay `roles`/`phase`/`reading`/`quick`/`found`
-messages, and write meetup history on end.
+Rooms hold max two members, each assigned a complementary transmit channel
+(A/B) on join rather than a role — everyone is simultaneously Seeker and
+Responder. Rooms relay `phase`/`gps`/`quick`/`found` messages and write
+meetup history on end.
 
 ## Testing
 
@@ -240,11 +272,18 @@ node tools/e2e-gps-smoke.mjs   # browser E2E: two pinned GPS fixes ~44m apart,
 The QR generator is verified by decoding its output with an independent
 decoder (jsQR); the WebSocket server is tested with a from-scratch masked
 client; ranging math (median, RTT→distance, channel selection, smoothing,
-proximity bands) is unit-tested. CI runs on Node 18/20/22.
+proximity bands) is unit-tested; GPS math (haversine, bearing, the
+switch-to-acoustic heuristic) is unit-tested; **bidirectional collision
+safety is unit-tested directly** (`tests/bidirectional.test.js`) by driving
+two `RangingSession`s through a simulated simultaneous ping with the "air"
+between them wired together in pure JS — no browser needed to prove the
+protocol logic itself never confuses one device's own ping for the other's
+reply. CI runs on Node 18/20/22.
 
 For the acoustic path itself, do a **two-tab loopback test** on one machine
-(one tab Seeker, one Responder — the shared mic hears both tones), then move
-to two physical phones. Real-device tuning lives in the diagnostics panel.
+(one tab Seeker, one Responder in Nearby mode — the shared mic hears both
+tones), then move to two physical phones in meetup mode. Real-device tuning
+lives in the diagnostics panel.
 
 ## Deploying / app stores
 

@@ -738,6 +738,41 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
 
 .responder-panel { text-align: center; padding: 0.75rem 0; }
 
+/* Meetup mode: compact "also replying to the peer" line shown alongside
+   the dial, since both devices seek and respond at once now. */
+.bidir-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  padding: 0.4rem 0 0.2rem;
+}
+
+.bidir-status strong { color: var(--text); font-weight: 700; }
+
+.bidir-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+/* Auto-switch between the GPS and Precision cards: the non-primary one
+   de-emphasizes rather than disappearing, since both keep working in the
+   background (GPS keeps tracking for the "drift back apart" case; sound
+   controls stay tappable even before GPS says you're close). */
+.find-transition { transition: opacity 0.35s ease, transform 0.35s ease; }
+
+.find-secondary {
+  opacity: 0.5;
+  transform: scale(0.97);
+}
+
 .listening-anim {
   display: flex;
   justify-content: center;

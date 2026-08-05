@@ -167,7 +167,7 @@
       <div id="find-qr" class="qr-box" aria-label="QR code with the invite link"></div>
     </div>
 
-    <div id="gps-card" class="card hidden">
+    <div id="gps-card" class="card find-transition hidden">
       <div class="gps-header">
         <h2 data-i18n="gps.title">Long range (GPS)</h2>
         <span id="gps-status" class="pill pill-idle"><span class="pill-dot"></span><span id="gps-status-text" data-i18n="gps.off">Off</span></span>
@@ -206,9 +206,13 @@
       <p class="muted small center" data-i18n="gps.unreliableNote">Approximate only — degrades indoors, near tall buildings, and in dense venues.</p>
     </div>
 
-    <div class="card find-main">
+    <div id="precision-card" class="card find-main find-transition">
       <h2 id="precision-title" class="precision-title hidden" data-i18n="find.precisionTitle">Precision find (sound)</h2>
-      <div class="role-row">
+
+      <!-- Nearby mode only: manual either/or role pick (no pairing channel
+           to auto-assign complementary transmit channels, so a collision
+           between two simultaneous pings has to be avoided by hand). -->
+      <div id="role-row" class="role-row hidden">
         <div class="role-current">
           <span class="muted small" data-i18n="find.yourRole">Your role</span>
           <strong id="find-role-name">—</strong>
@@ -217,7 +221,6 @@
           <button id="role-btn-seeker" class="seg-btn active" data-i18n="role.seeker">Seeker</button>
           <button id="role-btn-responder" class="seg-btn" data-i18n="role.responder">Responder</button>
         </div>
-        <button id="btn-swap" class="btn btn-outline btn-sm hidden" data-i18n="find.swap">Swap roles</button>
       </div>
 
       <div class="dial-wrap">
@@ -239,6 +242,17 @@
         <button id="btn-autoping" class="btn btn-outline" disabled aria-pressed="false" data-i18n="find.live">Live</button>
       </div>
 
+      <!-- Meetup mode only: both devices are simultaneously Seeker and
+           Responder, so this compact "also replying" line sits alongside
+           the dial+controls rather than replacing them. -->
+      <div id="bidir-status" class="bidir-status hidden">
+        <span class="bidir-dot" aria-hidden="true"></span>
+        <span data-i18n="find.alsoListening">Also listening for</span>
+        <strong id="bidir-peer-name">—</strong>
+        <span class="muted">· <span id="reply-count-bidir">0</span> <span data-i18n="find.repliesSent">replies sent</span></span>
+      </div>
+
+      <!-- Nearby mode only: full-panel responder-only display. -->
       <div id="responder-panel" class="responder-panel hidden">
         <div class="listening-anim" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
         <p class="muted" data-i18n="find.responderHint">Listening — keep this screen open. Your phone replies automatically.</p>
