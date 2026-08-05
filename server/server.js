@@ -108,9 +108,12 @@ export function createEchoServer({ dataFile } = {}) {
       }
       const ext = path.extname(filePath).toLowerCase();
       const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+      // Icons are content-stable and cheap to keep around; everything else
+      // (HTML/CSS/JS/manifest) is actively iterated on, so never let the
+      // browser's HTTP cache serve a stale copy — the service worker's own
+      // cache (network-first) is what covers offline use instead.
       if (pathname.startsWith('/icons/')) headers['Cache-Control'] = 'public, max-age=604800';
-      else if (ext === '.html' || pathname === '/sw.js') headers['Cache-Control'] = 'no-cache';
-      else headers['Cache-Control'] = 'public, max-age=3600';
+      else headers['Cache-Control'] = 'no-store';
       res.writeHead(200, headers);
       res.end(req.method === 'HEAD' ? undefined : buf);
     });
