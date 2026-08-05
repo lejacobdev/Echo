@@ -205,13 +205,15 @@ export class RangingSession {
 
   _onWorkletLevels(msg) {
     if (!this.cb.onDebug) return;
-    // Debug panel shows whichever pair belongs to the currently-selected
-    // channel — the worklet itself is always tracking both.
-    const base = this.channel === 'A' ? 0 : 2;
+    // Full state for both channels — not just "my channel" — so the debug
+    // panel can show exactly what's arriving on the frequency a Responder
+    // is supposed to be reacting to, not only what this device transmits.
     this.cb.onDebug({
-      magSeek: msg.mags[base], magReply: msg.mags[base + 1],
-      floorSeek: msg.floors[base], floorReply: msg.floors[base + 1],
-      threshold: msg.thresholds[base + 1],
+      path: 'worklet',
+      channel: this.channel,
+      otherChannel: this.bidirectional ? this.otherChannel : null,
+      mags: msg.mags,           // [A.seek, A.reply, B.seek, B.reply]
+      thresholds: msg.thresholds,
     });
   }
 
@@ -309,12 +311,12 @@ export class RangingSession {
     }
 
     if (this.cb.onDebug) {
-      const { seek, reply } = this.freqs;
       this.cb.onDebug({
-        magSeek: mags[`${this.channel}seek`], magReply: mags[`${this.channel}reply`],
-        floorSeek: Math.round(engine.floorAt(seek)),
-        floorReply: Math.round(engine.floorAt(reply)),
-        threshold: Math.round(this.threshold(reply)),
+        path: 'fallback',
+        channel: this.channel,
+        otherChannel: this.bidirectional ? this.otherChannel : null,
+        mags: FREQ_SLOTS.map((s) => mags[`${s.channel}${s.kind}`]),
+        thresholds: FREQ_SLOTS.map((s) => Math.round(this.threshold(s.freq))),
       });
     }
   }

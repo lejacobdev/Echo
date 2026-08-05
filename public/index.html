@@ -276,14 +276,30 @@
       <summary data-i18n="debug.title">Diagnostics</summary>
       <dl class="debug-grid">
         <dt data-i18n="debug.samplerate">Sample rate</dt><dd id="dbg-samplerate">—</dd>
-        <dt data-i18n="debug.channel">Channel</dt><dd id="dbg-channel">—</dd>
+        <dt data-i18n="debug.worklet">Detection path</dt><dd id="dbg-worklet">—</dd>
+        <dt data-i18n="debug.mychannel">Transmit / respond-on</dt><dd id="dbg-mychannel">—</dd>
         <dt data-i18n="debug.rtt">Raw RTT</dt><dd id="dbg-rtt">—</dd>
         <dt data-i18n="debug.offset">Calibration offset</dt><dd id="dbg-offset">—</dd>
-        <dt data-i18n="debug.magSeek">Signal @ seek freq</dt><dd id="dbg-mag-seek">—</dd>
-        <dt data-i18n="debug.magReply">Signal @ reply freq</dt><dd id="dbg-mag-reply">—</dd>
-        <dt data-i18n="debug.floor">Noise floor</dt><dd id="dbg-floor">—</dd>
-        <dt data-i18n="debug.threshold">Trigger threshold</dt><dd id="dbg-threshold">—</dd>
       </dl>
+      <p class="muted small debug-note" data-i18n="debug.note">Live signal vs. threshold for both channels — green means it's currently strong enough to trigger.</p>
+      <div class="debug-channels">
+        <div class="debug-channel-block">
+          <div class="debug-channel-label"><span>A</span><span class="muted small">19.0 / 20.0 kHz</span></div>
+          <dl class="debug-grid">
+            <dt data-i18n="debug.seek">Seek</dt><dd id="dbg-a-seek" class="debug-val">—</dd>
+            <dt data-i18n="debug.reply">Reply</dt><dd id="dbg-a-reply" class="debug-val">—</dd>
+            <dt data-i18n="debug.threshold">Threshold</dt><dd id="dbg-a-threshold">—</dd>
+          </dl>
+        </div>
+        <div class="debug-channel-block">
+          <div class="debug-channel-label"><span>B</span><span class="muted small">17.5 / 18.5 kHz</span></div>
+          <dl class="debug-grid">
+            <dt data-i18n="debug.seek">Seek</dt><dd id="dbg-b-seek" class="debug-val">—</dd>
+            <dt data-i18n="debug.reply">Reply</dt><dd id="dbg-b-reply" class="debug-val">—</dd>
+            <dt data-i18n="debug.threshold">Threshold</dt><dd id="dbg-b-threshold">—</dd>
+          </dl>
+        </div>
+      </div>
     </details>
   </section>
 

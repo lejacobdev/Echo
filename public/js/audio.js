@@ -23,6 +23,7 @@ export class AudioEngine {
     this.workletReady = false;
     this.onDetect = null;      // (freqIndex, audioTimeSec, mag) => void
     this.onWorkletLevels = null; // ({ mags, floors, thresholds }) => void
+    this._starting = null;     // in-flight start() promise, for de-duplication
   }
 
   get sampleRate() {
@@ -44,8 +45,27 @@ export class AudioEngine {
     );
   }
 
+  // Guards against concurrent invocation: enterFind() kicks this off
+  // automatically, and the user tapping Calibrate/Ping moments later (while
+  // the mic permission prompt is still pending — entirely normal, it needs
+  // a human to physically tap "Allow") would otherwise race a *second*,
+  // fully independent start() call. Both would pass the `if (this.active)`
+  // guard (stream is still null for either), each creating its own
+  // AudioContext + MediaStream — leaking a live mic track and an orphaned
+  // AudioContext every time it happens. Caught and confirmed by forcing a
+  // realistic getUserMedia delay in a real Chromium run.
   async start() {
     if (this.active) return;
+    if (this._starting) return this._starting;
+    this._starting = this._doStart();
+    try {
+      await this._starting;
+    } finally {
+      this._starting = null;
+    }
+  }
+
+  async _doStart() {
     const Ctor = window.AudioContext || window.webkitAudioContext;
     this.ctx = new Ctor();
     try {

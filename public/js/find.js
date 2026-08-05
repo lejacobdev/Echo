@@ -9,7 +9,7 @@
 // the same frequency and colliding.
 import { t } from './i18n.js';
 import { connectWs } from './net.js';
-import { RangingSession, createSmoother, proximityBand, pickChannel, CHANNELS } from './ranging.js';
+import { RangingSession, createSmoother, proximityBand, pickChannel } from './ranging.js';
 import { qrSvg } from './qr.js';
 import { haversineDistance, bearing, compassLabel, combineAccuracy, shouldSuggestAcoustic } from './geo.js';
 
@@ -157,8 +157,9 @@ function applyChannelSelection(ctx, preferred) {
     if (usable !== preferred) ctx.toast(t('find.lowSampleRate'), 'warn', 5000);
     state.session.setChannel(usable);
   }
-  $('dbg-channel').textContent =
-    `${state.session.channel} (${CHANNELS[state.session.channel].seek / 1000}/${CHANNELS[state.session.channel].reply / 1000} kHz)`;
+  $('dbg-mychannel').textContent = state.session.bidirectional
+    ? `${state.session.channel} / ${state.session.otherChannel}`
+    : state.session.channel;
 }
 
 // ---------- GPS long-range phase (meetup mode only) ----------
@@ -346,6 +347,7 @@ async function startEngine(ctx) {
   }
   ctx.setActivity('listening');
   $('dbg-samplerate').textContent = `${ctx.engine.sampleRate} Hz`;
+  $('dbg-worklet').textContent = ctx.engine.workletReady ? 'AudioWorklet' : 'Fallback (rAF)';
 
   const preferred = state.mode === 'meetup' ? (state.assignedChannel || ctx.settings.channel) : ctx.settings.channel;
   applyChannelSelection(ctx, preferred);
@@ -571,10 +573,21 @@ export async function enterFind(ctx, opts) {
     },
     onDebug(d) {
       if (!ctx.settings.debug) return;
-      $('dbg-mag-seek').textContent = String(d.magSeek);
-      $('dbg-mag-reply').textContent = String(d.magReply);
-      $('dbg-floor').textContent = `${d.floorSeek} / ${d.floorReply}`;
-      $('dbg-threshold').textContent = String(d.threshold);
+      $('dbg-worklet').textContent = d.path === 'worklet' ? 'AudioWorklet' : 'Fallback (rAF)';
+      $('dbg-mychannel').textContent = d.otherChannel
+        ? `${d.channel} / ${d.otherChannel}`
+        : d.channel;
+      // d.mags/d.thresholds are always [A.seek, A.reply, B.seek, B.reply]
+      const cells = [
+        ['dbg-a-seek', 0], ['dbg-a-reply', 1], ['dbg-b-seek', 2], ['dbg-b-reply', 3],
+      ];
+      for (const [id, i] of cells) {
+        const el = $(id);
+        el.textContent = String(d.mags[i]);
+        el.classList.toggle('crossed', d.mags[i] > d.thresholds[i]);
+      }
+      $('dbg-a-threshold').textContent = `${d.thresholds[0]} / ${d.thresholds[1]}`;
+      $('dbg-b-threshold').textContent = `${d.thresholds[2]} / ${d.thresholds[3]}`;
     },
   });
 
