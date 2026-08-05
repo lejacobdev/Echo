@@ -45,10 +45,11 @@ class RangingProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     // Default matches ranging.js's FREQ_SLOTS order: [A.seek, A.reply,
-    // B.seek, B.reply] — a Responder always tracks both channels so it
-    // never goes deaf just because the two devices' local channel settings
-    // didn't happen to match. Overwritten by the first 'config' message.
-    this.freqs = [19000, 20000, 17500, 18500];
+    // B.seek, B.reply, C.seek, C.reply] — a Responder always tracks every
+    // channel so it never goes deaf just because the two devices' local
+    // channel settings didn't happen to match. Overwritten by the first
+    // 'config' message.
+    this.freqs = [19000, 20000, 17500, 18500, 12500, 13500];
     this.mode = 'adaptive';       // 'adaptive' | 'manual'
     this.manualThreshold = 165;   // 0-255 scale
     this.adaptiveMargin = 30;     // lower than the old 45: Goertzel's cleaner

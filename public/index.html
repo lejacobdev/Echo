@@ -250,6 +250,7 @@
         <span data-i18n="find.alsoListening">Also listening for</span>
         <strong id="bidir-peer-name">—</strong>
         <span class="muted">· <span id="reply-count-bidir">0</span> <span data-i18n="find.repliesSent">replies sent</span></span>
+        <span class="muted">· <span data-i18n="find.yourChannel">channel</span> <strong id="bidir-channel">—</strong></span>
       </div>
 
       <!-- Nearby mode only: full-panel responder-only display. -->
@@ -281,7 +282,7 @@
         <dt data-i18n="debug.rtt">Raw RTT</dt><dd id="dbg-rtt">—</dd>
         <dt data-i18n="debug.offset">Calibration offset</dt><dd id="dbg-offset">—</dd>
       </dl>
-      <p class="muted small debug-note" data-i18n="debug.note">Live signal vs. threshold for both channels — green means it's currently strong enough to trigger.</p>
+      <p class="muted small debug-note" data-i18n="debug.note">Live signal vs. threshold for every channel — green means it's currently strong enough to trigger. "Seek" is a chirp arriving from a peer; "Reply" is the answer coming back to you. Your own outgoing chirp briefly spiking its own Seek/Reply cell is normal speaker-into-mic bleed, not a real detection.</p>
       <div class="debug-channels">
         <div class="debug-channel-block">
           <div class="debug-channel-label"><span>A</span><span class="muted small">19.0 / 20.0 kHz</span></div>
@@ -297,6 +298,14 @@
             <dt data-i18n="debug.seek">Seek</dt><dd id="dbg-b-seek" class="debug-val">—</dd>
             <dt data-i18n="debug.reply">Reply</dt><dd id="dbg-b-reply" class="debug-val">—</dd>
             <dt data-i18n="debug.threshold">Threshold</dt><dd id="dbg-b-threshold">—</dd>
+          </dl>
+        </div>
+        <div class="debug-channel-block">
+          <div class="debug-channel-label"><span>C</span><span class="muted small">12.5 / 13.5 kHz</span></div>
+          <dl class="debug-grid">
+            <dt data-i18n="debug.seek">Seek</dt><dd id="dbg-c-seek" class="debug-val">—</dd>
+            <dt data-i18n="debug.reply">Reply</dt><dd id="dbg-c-reply" class="debug-val">—</dd>
+            <dt data-i18n="debug.threshold">Threshold</dt><dd id="dbg-c-threshold">—</dd>
           </dl>
         </div>
       </div>
@@ -404,8 +413,10 @@
         <select id="set-channel">
           <option value="A" data-i18n="settings.channelA">A — 19/20 kHz (default)</option>
           <option value="B" data-i18n="settings.channelB">B — 17.5/18.5 kHz (older speakers)</option>
+          <option value="C" data-i18n="settings.channelC">C — 12.5/13.5 kHz (audible, testing only)</option>
         </select>
       </label>
+      <p class="muted small" data-i18n="settings.channelNote">Only used in Nearby mode. Meetup mode assigns each device a different channel automatically so both phones' pings never collide — you may see a channel other than the one you picked here, that's expected.</p>
       <label class="field-row">
         <span data-i18n="settings.adaptive">Adaptive detection threshold</span>
         <input type="checkbox" id="set-adaptive" class="switch" checked />

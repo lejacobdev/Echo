@@ -5,6 +5,13 @@ export const SPEED_OF_SOUND = 343; // m/s
 export const CHANNELS = {
   A: { seek: 19000, reply: 20000 },
   B: { seek: 17500, reply: 18500 },
+  // Deliberately audible (not near-ultrasonic) and well inside the range
+  // every phone mic/speaker reproduces cleanly. Not for real use — it's a
+  // diagnostic: if two devices still can't hear each other on C, the
+  // problem isn't hardware high-frequency rolloff and lies elsewhere in
+  // the protocol/environment; if C works but A/B don't, the phones'
+  // mic/speaker response above ~18kHz is the culprit.
+  C: { seek: 12500, reply: 13500 },
 };
 
 // Fixed index order the worklet/fallback path is always configured with —
@@ -18,6 +25,8 @@ export const FREQ_SLOTS = [
   { channel: 'A', kind: 'reply', freq: CHANNELS.A.reply }, // index 1
   { channel: 'B', kind: 'seek', freq: CHANNELS.B.seek },   // index 2
   { channel: 'B', kind: 'reply', freq: CHANNELS.B.reply }, // index 3
+  { channel: 'C', kind: 'seek', freq: CHANNELS.C.seek },   // index 4
+  { channel: 'C', kind: 'reply', freq: CHANNELS.C.reply }, // index 5
 ];
 
 export function median(values) {
@@ -130,6 +139,9 @@ export class RangingSession {
   }
 
   get freqs() { return CHANNELS[this.channel]; }
+  // A/B swap only — bidirectional (meetup) sessions are always assigned A
+  // or B by the server, never C. C is a Nearby-mode-only manual diagnostic
+  // channel with no complementary-pair concept.
   get otherChannel() { return this.channel === 'A' ? 'B' : 'A'; }
 
   threshold(freq) {

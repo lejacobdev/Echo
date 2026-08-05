@@ -43,14 +43,16 @@ test('proximity bands', () => {
 
 test('FREQ_SLOTS: stable index order a Responder listens on regardless of its own channel setting', () => {
   // This ordering is load-bearing: ranging.js's worklet/fallback detection
-  // paths hardcode these indices (0/1 = A seek/reply, 2/3 = B seek/reply)
-  // so a Responder can react to either channel without needing the two
-  // devices' local settings to agree.
-  assert.equal(FREQ_SLOTS.length, 4);
+  // paths hardcode these indices (0/1 = A seek/reply, 2/3 = B seek/reply,
+  // 4/5 = C seek/reply) so a Responder can react to any channel without
+  // needing the two devices' local settings to agree.
+  assert.equal(FREQ_SLOTS.length, 6);
   assert.deepEqual(FREQ_SLOTS[0], { channel: 'A', kind: 'seek', freq: CHANNELS.A.seek });
   assert.deepEqual(FREQ_SLOTS[1], { channel: 'A', kind: 'reply', freq: CHANNELS.A.reply });
   assert.deepEqual(FREQ_SLOTS[2], { channel: 'B', kind: 'seek', freq: CHANNELS.B.seek });
   assert.deepEqual(FREQ_SLOTS[3], { channel: 'B', kind: 'reply', freq: CHANNELS.B.reply });
+  assert.deepEqual(FREQ_SLOTS[4], { channel: 'C', kind: 'seek', freq: CHANNELS.C.seek });
+  assert.deepEqual(FREQ_SLOTS[5], { channel: 'C', kind: 'reply', freq: CHANNELS.C.reply });
 });
 
 test('smoother rejects single-sample outliers', () => {

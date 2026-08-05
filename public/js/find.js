@@ -160,6 +160,11 @@ function applyChannelSelection(ctx, preferred) {
   $('dbg-mychannel').textContent = state.session.bidirectional
     ? `${state.session.channel} / ${state.session.otherChannel}`
     : state.session.channel;
+  // Meetup mode always overrides the local Settings channel with a
+  // server-assigned one (see connectRoom's 'joined' handler) so the two
+  // devices' pings never collide — surface that plainly in the main UI,
+  // not just the debug panel, so it doesn't read as a bug.
+  if (state.session.bidirectional) $('bidir-channel').textContent = state.session.channel;
 }
 
 // ---------- GPS long-range phase (meetup mode only) ----------
@@ -577,9 +582,10 @@ export async function enterFind(ctx, opts) {
       $('dbg-mychannel').textContent = d.otherChannel
         ? `${d.channel} / ${d.otherChannel}`
         : d.channel;
-      // d.mags/d.thresholds are always [A.seek, A.reply, B.seek, B.reply]
+      // d.mags/d.thresholds are always [A.seek, A.reply, B.seek, B.reply, C.seek, C.reply]
       const cells = [
         ['dbg-a-seek', 0], ['dbg-a-reply', 1], ['dbg-b-seek', 2], ['dbg-b-reply', 3],
+        ['dbg-c-seek', 4], ['dbg-c-reply', 5],
       ];
       for (const [id, i] of cells) {
         const el = $(id);
@@ -588,6 +594,7 @@ export async function enterFind(ctx, opts) {
       }
       $('dbg-a-threshold').textContent = `${d.thresholds[0]} / ${d.thresholds[1]}`;
       $('dbg-b-threshold').textContent = `${d.thresholds[2]} / ${d.thresholds[3]}`;
+      $('dbg-c-threshold').textContent = `${d.thresholds[4]} / ${d.thresholds[5]}`;
     },
   });
 
