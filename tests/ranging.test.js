@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   median, distanceFromRtt, channelUsable, pickChannel, proximityBand, createSmoother,
+  CHANNELS, FREQ_SLOTS,
 } from '../public/js/ranging.js';
 
 test('median', () => {
@@ -38,6 +39,18 @@ test('proximity bands', () => {
   assert.equal(proximityBand(3), 'close');
   assert.equal(proximityBand(8), 'inRange');
   assert.equal(proximityBand(30), 'far');
+});
+
+test('FREQ_SLOTS: stable index order a Responder listens on regardless of its own channel setting', () => {
+  // This ordering is load-bearing: ranging.js's worklet/fallback detection
+  // paths hardcode these indices (0/1 = A seek/reply, 2/3 = B seek/reply)
+  // so a Responder can react to either channel without needing the two
+  // devices' local settings to agree.
+  assert.equal(FREQ_SLOTS.length, 4);
+  assert.deepEqual(FREQ_SLOTS[0], { channel: 'A', kind: 'seek', freq: CHANNELS.A.seek });
+  assert.deepEqual(FREQ_SLOTS[1], { channel: 'A', kind: 'reply', freq: CHANNELS.A.reply });
+  assert.deepEqual(FREQ_SLOTS[2], { channel: 'B', kind: 'seek', freq: CHANNELS.B.seek });
+  assert.deepEqual(FREQ_SLOTS[3], { channel: 'B', kind: 'reply', freq: CHANNELS.B.reply });
 });
 
 test('smoother rejects single-sample outliers', () => {

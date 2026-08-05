@@ -44,7 +44,11 @@ function toByteScale(amplitude, gain = 6) {
 class RangingProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.freqs = [19000, 20000];
+    // Default matches ranging.js's FREQ_SLOTS order: [A.seek, A.reply,
+    // B.seek, B.reply] — a Responder always tracks both channels so it
+    // never goes deaf just because the two devices' local channel settings
+    // didn't happen to match. Overwritten by the first 'config' message.
+    this.freqs = [19000, 20000, 17500, 18500];
     this.mode = 'adaptive';       // 'adaptive' | 'manual'
     this.manualThreshold = 165;   // 0-255 scale
     this.adaptiveMargin = 30;     // lower than the old 45: Goertzel's cleaner
@@ -54,9 +58,9 @@ class RangingProcessor extends AudioWorkletProcessor {
     this.ringPos = 0;
     this.filled = 0;
 
-    this.floors = [0, 0];         // 0-255 scale, EMA
-    this.floorInit = [false, false];
-    this.lastCross = [-Infinity, -Infinity];
+    this.floors = [0, 0, 0, 0];         // 0-255 scale, EMA
+    this.floorInit = [false, false, false, false];
+    this.lastCross = [-Infinity, -Infinity, -Infinity, -Infinity];
     this.lastLevelReport = 0;
 
     this.port.onmessage = (event) => {
@@ -87,7 +91,15 @@ class RangingProcessor extends AudioWorkletProcessor {
     const samples = new Float32Array(WINDOW);
     for (let i = 0; i < WINDOW; i++) samples[i] = this.ring[(this.ringPos + i) % WINDOW];
 
-    const mags = this.freqs.map((f) => toByteScale(goertzelMagnitude(samples, f, sampleRate)));
+    // A frequency at or above this device's own Nyquist limit can't be
+    // measured meaningfully (matches ranging.js's channelUsable() margin) —
+    // report it as silent rather than feeding garbage into threshold/floor
+    // tracking. This matters now that a Responder always requests both
+    // channels regardless of whether its own hardware's sample rate can
+    // actually hear the higher one.
+    const mags = this.freqs.map((f) =>
+      f >= sampleRate / 2 - 500 ? 0 : toByteScale(goertzelMagnitude(samples, f, sampleRate))
+    );
 
     for (let i = 0; i < mags.length; i++) {
       if (!this.floorInit[i]) { this.floors[i] = mags[i]; this.floorInit[i] = true; }

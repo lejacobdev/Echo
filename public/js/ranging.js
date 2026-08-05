@@ -7,6 +7,19 @@ export const CHANNELS = {
   B: { seek: 17500, reply: 18500 },
 };
 
+// Fixed index order the worklet/fallback path is always configured with —
+// a Responder listens on *both* channels regardless of its own local
+// "Frequency channel" setting, so it can never be silently deaf to a Seeker
+// on a channel the two devices didn't happen to agree on. Only the Seeker's
+// own channel choice determines which frequency it transmits/listens for a
+// reply on; the Responder adapts to whichever one it actually hears.
+export const FREQ_SLOTS = [
+  { channel: 'A', kind: 'seek', freq: CHANNELS.A.seek },   // index 0
+  { channel: 'A', kind: 'reply', freq: CHANNELS.A.reply }, // index 1
+  { channel: 'B', kind: 'seek', freq: CHANNELS.B.seek },   // index 2
+  { channel: 'B', kind: 'reply', freq: CHANNELS.B.reply }, // index 3
+];
+
 export function median(values) {
   if (!values.length) return NaN;
   const sorted = [...values].sort((a, b) => a - b);
@@ -119,15 +132,16 @@ export class RangingSession {
   }
 
   setChannel(channel) {
+    // Only affects what a Seeker transmits/expects back — the worklet's
+    // tracked frequency set is fixed (both channels, always) and doesn't
+    // need reconfiguring when this changes.
     this.channel = channel;
-    this._configureWorklet();
   }
 
   _configureWorklet() {
     if (!this.engine.workletReady) return;
-    const { seek, reply } = this.freqs;
     this.engine.configureWorklet({
-      freqs: [seek, reply],
+      freqs: FREQ_SLOTS.map((s) => s.freq),
       mode: this.adaptive ? 'adaptive' : 'manual',
       manualThreshold: this.manualThreshold,
     });
@@ -179,24 +193,32 @@ export class RangingSession {
 
   _onWorkletLevels(msg) {
     if (!this.cb.onDebug) return;
+    // Debug panel shows whichever pair belongs to the currently-selected
+    // channel — the worklet itself is always tracking both.
+    const base = this.channel === 'A' ? 0 : 2;
     this.cb.onDebug({
-      magSeek: msg.mags[0], magReply: msg.mags[1],
-      floorSeek: msg.floors[0], floorReply: msg.floors[1],
-      threshold: msg.thresholds[1],
+      magSeek: msg.mags[base], magReply: msg.mags[base + 1],
+      floorSeek: msg.floors[base], floorReply: msg.floors[base + 1],
+      threshold: msg.thresholds[base + 1],
     });
   }
 
-  // freqIndex 0 = this channel's seek frequency, 1 = its reply frequency
-  // (matches the order ping()/setChannel() configure the worklet with).
+  // freqIndex indexes FREQ_SLOTS: 0/1 = channel A seek/reply, 2/3 = channel
+  // B seek/reply. A Responder reacts to a seek index on *either* channel
+  // and replies in kind; a Seeker only accepts a reply on the channel it
+  // actually transmitted on.
   _onWorkletCross(freqIndex, audioTime) {
-    if (this.role === 'responder' && freqIndex === 0) {
+    const slot = FREQ_SLOTS[freqIndex];
+    if (!slot) return;
+
+    if (this.role === 'responder' && slot.kind === 'seek') {
       if (audioTime - this._lastReplyAtAudio > RESPONDER_DEBOUNCE_MS / 1000) {
         this._lastReplyAtAudio = audioTime;
         this.replyCount++;
-        this.engine.playTone(this.freqs.reply);
+        this.engine.playTone(CHANNELS[slot.channel].reply);
         if (this.cb.onReply) this.cb.onReply(this.replyCount);
       }
-    } else if (this.role === 'seeker' && this._awaiting && freqIndex === 1) {
+    } else if (this.role === 'seeker' && this._awaiting && slot.kind === 'reply' && slot.channel === this.channel) {
       const elapsed = (audioTime - this._pingStartAudio) * 1000; // -> ms
       if (elapsed > SEEKER_MIN_RTT_MS) {
         this._awaiting = false;
@@ -210,23 +232,34 @@ export class RangingSession {
     const { engine } = this;
     if (!engine.active) return;
     engine.capture();
-    const { seek, reply } = this.freqs;
-    const magSeek = engine.magAt(seek);
-    const magReply = engine.magAt(reply);
-    engine.updateFloor(seek, magSeek);
-    engine.updateFloor(reply, magReply);
+
+    // Same "listen on both channels" fix as the worklet path: a Responder
+    // must never miss a Seeker just because their local channel settings
+    // don't match.
+    const mags = {};
+    for (const slot of FREQ_SLOTS) {
+      const m = engine.magAt(slot.freq);
+      mags[`${slot.channel}${slot.kind}`] = m;
+      engine.updateFloor(slot.freq, m);
+    }
     const now = performance.now();
 
     if (this.role === 'responder') {
-      if (magSeek > this.threshold(seek) && now - this._lastReplyAt > RESPONDER_DEBOUNCE_MS) {
-        this._lastReplyAt = now;
-        this.replyCount++;
-        engine.playTone(reply);
-        if (this.cb.onReply) this.cb.onReply(this.replyCount);
+      for (const ch of ['A', 'B']) {
+        const seekFreq = CHANNELS[ch].seek;
+        if (mags[`${ch}seek`] > this.threshold(seekFreq) && now - this._lastReplyAt > RESPONDER_DEBOUNCE_MS) {
+          this._lastReplyAt = now;
+          this.replyCount++;
+          engine.playTone(CHANNELS[ch].reply);
+          if (this.cb.onReply) this.cb.onReply(this.replyCount);
+          break; // one reply per tick even if both somehow spike at once
+        }
       }
     } else if (this._awaiting) {
+      const { reply } = this.freqs; // only accept a reply on our own channel
+      const myReplyMag = mags[`${this.channel}reply`];
       const elapsed = now - this._pingStart;
-      if (magReply > this.threshold(reply) && elapsed > SEEKER_MIN_RTT_MS) {
+      if (myReplyMag > this.threshold(reply) && elapsed > SEEKER_MIN_RTT_MS) {
         this._awaiting = false;
         this.lastRtt = elapsed;
         this._settleReading(elapsed);
@@ -237,8 +270,9 @@ export class RangingSession {
     }
 
     if (this.cb.onDebug) {
+      const { seek, reply } = this.freqs;
       this.cb.onDebug({
-        magSeek, magReply,
+        magSeek: mags[`${this.channel}seek`], magReply: mags[`${this.channel}reply`],
         floorSeek: Math.round(engine.floorAt(seek)),
         floorReply: Math.round(engine.floorAt(reply)),
         threshold: Math.round(this.threshold(reply)),

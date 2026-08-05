@@ -149,6 +149,15 @@ tested with synthetic tones in `tests/goertzel.test.js`; the worklet embeds
 an identical, self-contained copy since Safari's `audioWorklet.addModule()`
 compatibility is best with no cross-file imports).
 
+**A Responder always listens on both frequency channels at once**, regardless
+of what its own local "Frequency channel" setting says. Only a Seeker's
+channel choice matters — it decides which frequency *it* transmits and
+listens for a reply on (`ranging.js`'s `FREQ_SLOTS`, a fixed 4-frequency
+index used consistently by both the worklet and the fallback path). Channel
+selection is per-device and there's no cross-device sync — without this, two
+phones with mismatched Settings would ping and listen on entirely different
+frequencies and never hear each other at all.
+
 ## Honest limitations
 
 - **Accuracy is realistically 1–3 m**, not centimeters — browser audio
