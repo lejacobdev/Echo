@@ -1,6 +1,6 @@
 // Echo service worker: precached app shell, offline-capable nearby mode.
 // API and WebSocket traffic always goes to the network.
-const VERSION = 'echo-v1.1.0';
+const VERSION = 'echo-v1.2.0';
 const SHELL = [
   '/',
   '/index.html',

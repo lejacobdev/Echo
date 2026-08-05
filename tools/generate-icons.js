@@ -58,9 +58,9 @@ function writePng(file, size, pixels /* RGBA Uint8Array */) {
 }
 
 // ---- Icon art ----
-const BG = [20, 20, 19];
-const TEAL = [51, 198, 183];
-const BLUE = [124, 161, 255];
+const BG = [18, 18, 17];
+const TEAL = [122, 184, 168];
+const BLUE = [231, 226, 213];
 
 function lerp(a, b, u) { return a + (b - a) * u; }
 
