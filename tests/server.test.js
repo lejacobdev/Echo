@@ -193,6 +193,23 @@ test('meetup create + user/guest join + full room + role assignment over WS', as
   assert.equal(quick.text, 'On my way');
   assert.equal(quick.from, 'Alice');
 
+  // GPS long-range relay: Alice's fix reaches the guest, never touches history/best
+  wsAlice.send({ t: 'gps', lat: 48.8584, lon: 2.2945, accuracy: 12.5 });
+  const gps = await wsGuest.next();
+  assert.equal(gps.t, 'gps');
+  assert.equal(gps.lat, 48.8584);
+  assert.equal(gps.lon, 2.2945);
+  assert.equal(gps.accuracy, 12.5);
+  assert.ok(typeof gps.at === 'number');
+
+  // Out-of-range / malformed GPS payloads are silently dropped, not relayed
+  wsAlice.send({ t: 'gps', lat: 999, lon: 2.2945, accuracy: 12.5 });
+  wsAlice.send({ t: 'gps', lat: 48.85, lon: 2.29, accuracy: -1 });
+  wsAlice.send({ t: 'quick', text: 'sentinel' }); // proves the bad gps frames above were dropped, not just slow
+  const sentinel = await wsGuest.next();
+  assert.equal(sentinel.t, 'quick');
+  assert.equal(sentinel.text, 'sentinel');
+
   // Found -> broadcast + session end + history for the signed-in member
   wsAlice.send({ t: 'found' });
   assert.equal((await wsAlice.next()).t, 'found');

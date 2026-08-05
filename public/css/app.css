@@ -475,6 +475,70 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   padding: 12px;
 }
 
+.precision-title { text-align: center; width: 100%; }
+
+/* ---------- GPS long-range panel ---------- */
+
+.gps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.gps-header h2 { margin: 0; }
+
+#gps-enable-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+#gps-enable-row p { margin: 0; flex: 1; min-width: 180px; }
+
+.gps-live {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.5rem 0;
+  flex-wrap: wrap;
+}
+
+.compass-wrap { width: 92px; height: 92px; flex-shrink: 0; }
+.compass { width: 100%; height: 100%; }
+.compass-ring { fill: var(--bg-quiet); stroke: var(--border); stroke-width: 2; }
+.compass-n { fill: var(--text-dim); font-size: 11px; font-weight: 700; }
+
+.compass-arrow-group {
+  transform-origin: 80px 80px;
+  transition: transform 0.4s ease;
+}
+
+.compass-arrow { fill: var(--accent); }
+
+.gps-readout { flex: 1; min-width: 140px; }
+
+.gps-distance {
+  font-size: 1.7rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.gps-suggest {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 .find-main { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
 
 .role-row {

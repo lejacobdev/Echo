@@ -39,7 +39,7 @@ const SECURITY_HEADERS = {
   ].join('; '),
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
-  'Permissions-Policy': 'microphone=(self), camera=(), geolocation=()',
+  'Permissions-Policy': 'microphone=(self), camera=(), geolocation=(self)',
   'X-Frame-Options': 'DENY',
 };
 

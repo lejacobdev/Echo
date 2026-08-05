@@ -325,6 +325,22 @@ export function createHub(store) {
         }
         break;
       }
+      case 'gps': {
+        // Long-range phase: relay a live position fix to the peer only.
+        // Never stored server-side — this is a pass-through, same as 'reading'.
+        const lat = Number(msg.lat);
+        const lon = Number(msg.lon);
+        const accuracy = Number(msg.accuracy);
+        if (
+          peer &&
+          Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+          Number.isFinite(lon) && lon >= -180 && lon <= 180 &&
+          Number.isFinite(accuracy) && accuracy >= 0
+        ) {
+          peer.conn.send({ t: 'gps', lat, lon, accuracy, at: Date.now() });
+        }
+        break;
+      }
       case 'quick': {
         const text = String(msg.text || '').slice(0, 120);
         if (text && peer) peer.conn.send({ t: 'quick', text, from: member.ident.name });

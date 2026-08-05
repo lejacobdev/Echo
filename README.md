@@ -25,6 +25,23 @@ with no account** ("Nearby mode").
 - Outlier-rejecting smoothing (rolling median + EMA)
 - Haptic feedback, optional audible ticks (accessibility), screen wake lock
 
+**Long range (GPS), then precision (sound)** — meetup mode only
+- A GPS phase for the gap acoustic ranging can't cover: both phones share
+  live position over the meetup's WebSocket room, computing great-circle
+  distance and compass bearing between them (haversine + initial bearing,
+  `public/js/geo.js`, unit tested)
+- Honest about GPS uncertainty by design: shows a combined accuracy radius
+  (root-sum-square of both devices' reported accuracy) rather than a falsely
+  precise single number, and suggests switching to acoustic only when the
+  distance-minus-accuracy margin plausibly puts you in its working range
+- Compass arrow rotates with device heading when available (`deviceorientation`
+  / iOS's `webkitCompassHeading`, permission-gated on iOS 13+); falls back to
+  a north-up arrow with a visible note when no heading is available
+- Deliberately **not available in Nearby mode** — it needs the peer channel
+  that the no-account offline mode doesn't have. Also needs its own
+  microphone-independent permission (location), requested explicitly by a
+  visible "Enable GPS" tap, never silently
+
 **Social layer** (optional — requires an account)
 - Accounts: scrypt-hashed passwords, session cookies, change password, delete
   account; profile with display name + emoji avatar
@@ -145,6 +162,20 @@ compatibility is best with no cross-file imports).
 - **Some hardware can't do 19–20 kHz** (many laptops, older phones). Channel B
   (17.5/18.5 kHz) helps at the cost of being faintly audible to young ears.
 - **iPhone silent switch** can mute web audio — the app shows a hint on iOS.
+- **No frequency choice gets acoustic ranging to tens of meters in a loud
+  venue**, and this isn't a tunable limitation — it's a transducer-power
+  problem. A phone speaker outputs roughly 80-85dB SPL at 10cm and loses
+  ~6dB per doubling of distance; a loud concert runs 90-110dB ambient. No
+  frequency closes that gap. This is why the GPS long-range phase exists:
+  GPS distance/bearing covers the gap acoustic physically can't, handing off
+  to sound once you're within its real envelope.
+- **GPS accuracy degrades indoors, in covered arenas/stadiums, and near tall
+  buildings** (multipath, weak/blocked sky view) — the app shows a combined
+  accuracy radius rather than a bare number for exactly this reason. Dense
+  crowds of people affect it far less than the venue's structure does.
+- **Compass heading is approximate** — phone magnetometers are easily thrown
+  off by nearby speakers, amps, and metal structures, all common at a venue.
+  Falls back to a north-up arrow when no heading is available.
 - Ultrasound earned a bad reputation from covert ad-tracking beacons
   (SilverPush et al.). Echo is deliberately the opposite: strictly opt-in,
   session-only, never in the background, with mic/speaker state always
@@ -170,6 +201,7 @@ public/
     audio.js    # AudioEngine: mic, worklet wiring, tone/tick synthesis
     ranging-worklet.js  # AudioWorkletProcessor: real-time-thread detection
     goertzel.js # exact-frequency energy detector, shared/tested reference
+    geo.js      # GPS long-range math: haversine distance, bearing (tested)
     net.js      # fetch wrapper, reconnecting WebSocket, safe storage
     i18n.js     # EN/DE/FR/ES dictionaries + translation helpers
     qr.js       # QR generator (byte mode, ECC-L, v1–5), zero deps
@@ -190,8 +222,10 @@ messages, and write meetup history on end.
 
 ```sh
 npm install        # dev deps (jsqr for QR verification)
-npm test           # 28 integration + unit tests (node --test)
-node tools/e2e-smoke.mjs   # browser E2E (needs playwright + chromium)
+npm test           # unit + integration tests (node --test)
+node tools/e2e-smoke.mjs       # browser E2E: accounts, friends, meetups
+node tools/e2e-gps-smoke.mjs   # browser E2E: two pinned GPS fixes ~44m apart,
+                                # verifies live distance/bearing over the WS relay
 ```
 
 The QR generator is verified by decoding its output with an independent

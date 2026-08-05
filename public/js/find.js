@@ -4,10 +4,13 @@ import { t } from './i18n.js';
 import { connectWs } from './net.js';
 import { RangingSession, createSmoother, proximityBand, pickChannel, CHANNELS } from './ranging.js';
 import { qrSvg } from './qr.js';
+import { haversineDistance, bearing, compassLabel, combineAccuracy, shouldSuggestAcoustic } from './geo.js';
 
 const DIAL_CIRCUMFERENCE = 2 * Math.PI * 88;
 const AUTO_PING_MS = 1600;
 const QUICK_KEYS = ['quick.here', 'quick.omw', 'quick.stay', 'quick.entrance', 'quick.twomin'];
+const GPS_SEND_MIN_INTERVAL_MS = 2500;
+const GPS_SUGGEST_THRESHOLD_M = 15;
 
 const state = {
   active: false,
@@ -23,6 +26,15 @@ const state = {
   peer: null,
   foundShown: false,
   leaving: false,
+  gps: {
+    watchId: null,
+    enabled: false,
+    selfFix: null,       // { lat, lon, accuracy }
+    peerFix: null,       // { lat, lon, accuracy }
+    deviceHeading: null, // degrees, true north, or null if no compass
+    lastSentAt: 0,
+    orientationHandler: null,
+  },
 };
 
 function $(id) { return document.getElementById(id); }
@@ -123,6 +135,119 @@ document.addEventListener('visibilitychange', () => {
   if (!state.active) return;
   if (!document.hidden && !state.wakeLock) acquireWakeLock();
 });
+
+// ---------- GPS long-range phase (meetup mode only) ----------
+
+function formatDistance(meters) {
+  return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.round(meters)} m`;
+}
+
+function setGpsStatus(key, live) {
+  const pill = $('gps-status');
+  pill.className = `pill ${live ? 'pill-live' : 'pill-idle'}`;
+  $('gps-status-text').textContent = t(key);
+}
+
+function updateGpsUi() {
+  const { selfFix, peerFix, deviceHeading } = state.gps;
+  if (!selfFix) return;
+  if (!peerFix) { setGpsStatus('gps.selfOnly', false); return; }
+
+  const distance = haversineDistance(selfFix.lat, selfFix.lon, peerFix.lat, peerFix.lon);
+  const combinedAcc = combineAccuracy(selfFix.accuracy, peerFix.accuracy);
+  const toPeer = bearing(selfFix.lat, selfFix.lon, peerFix.lat, peerFix.lon);
+
+  setGpsStatus('gps.live', true);
+  $('gps-distance').textContent = formatDistance(distance);
+  $('gps-accuracy').textContent =
+    `${compassLabel(toPeer)} · ± ${Math.round(combinedAcc)} m ${t('gps.accuracyLabel')}`;
+
+  const rotate = deviceHeading === null ? toPeer : toPeer - deviceHeading;
+  $('compass-arrow').style.transform = `rotate(${rotate}deg)`;
+  $('gps-heading-note').classList.toggle('hidden', deviceHeading !== null);
+
+  const suggest = shouldSuggestAcoustic(distance, combinedAcc, GPS_SUGGEST_THRESHOLD_M);
+  $('gps-suggest').classList.toggle('hidden', !suggest);
+}
+
+function handleOrientation(event) {
+  let heading = null;
+  if (typeof event.webkitCompassHeading === 'number') {
+    heading = event.webkitCompassHeading; // iOS Safari: already true-north heading
+  } else if (event.absolute && typeof event.alpha === 'number') {
+    heading = (360 - event.alpha) % 360; // standard AbsoluteOrientation convention
+  }
+  if (heading === null) return;
+  state.gps.deviceHeading = heading;
+  updateGpsUi();
+}
+
+async function enableGps(ctx) {
+  if (!('geolocation' in navigator)) return;
+  state.gps.enabled = true;
+  setGpsStatus('gps.searching', false);
+  $('gps-enable-row').classList.add('hidden');
+  $('gps-denied').classList.add('hidden');
+  $('gps-live').classList.remove('hidden');
+
+  // iOS gates DeviceOrientationEvent behind an explicit, gesture-synchronous
+  // request; call it before anything async so the gesture is still "fresh".
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm === 'granted') window.addEventListener('deviceorientation', handleOrientation);
+    } catch { /* denied or unsupported: falls back to north-up */ }
+  } else {
+    window.addEventListener('deviceorientationabsolute', handleOrientation);
+    window.addEventListener('deviceorientation', handleOrientation);
+  }
+  state.gps.orientationHandler = handleOrientation;
+
+  state.gps.watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      const fix = {
+        lat: pos.coords.latitude,
+        lon: pos.coords.longitude,
+        accuracy: pos.coords.accuracy || 50,
+      };
+      state.gps.selfFix = fix;
+      updateGpsUi();
+
+      const now = performance.now();
+      if (state.mode === 'meetup' && state.ws && now - state.gps.lastSentAt > GPS_SEND_MIN_INTERVAL_MS) {
+        state.gps.lastSentAt = now;
+        state.ws.send({ t: 'gps', lat: fix.lat, lon: fix.lon, accuracy: fix.accuracy });
+      }
+    },
+    (err) => {
+      if (err.code === err.PERMISSION_DENIED) {
+        $('gps-live').classList.add('hidden');
+        $('gps-denied').classList.remove('hidden');
+        setGpsStatus('gps.off', false);
+        state.gps.enabled = false;
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+  );
+}
+
+function resetGps() {
+  if (state.gps.watchId !== null) navigator.geolocation.clearWatch(state.gps.watchId);
+  if (state.gps.orientationHandler) {
+    window.removeEventListener('deviceorientation', state.gps.orientationHandler);
+    window.removeEventListener('deviceorientationabsolute', state.gps.orientationHandler);
+  }
+  state.gps = {
+    watchId: null, enabled: false, selfFix: null, peerFix: null,
+    deviceHeading: null, lastSentAt: 0, orientationHandler: null,
+  };
+  $('gps-enable-row').classList.remove('hidden');
+  $('gps-live').classList.add('hidden');
+  $('gps-denied').classList.add('hidden');
+  $('gps-suggest').classList.add('hidden');
+  $('gps-heading-note').classList.add('hidden');
+  setGpsStatus('gps.off', false);
+}
 
 // ---------- Audio bootstrap ----------
 
@@ -237,6 +362,10 @@ function connectRoom(ctx) {
           ctx.toast(`${msg.from}: ${msg.text}`, 'info', 4000);
           haptic([20, 40, 20]);
           break;
+        case 'gps':
+          state.gps.peerFix = { lat: msg.lat, lon: msg.lon, accuracy: msg.accuracy };
+          updateGpsUi();
+          break;
         case 'found':
           state.foundShown = true;
           showFoundModal(ctx);
@@ -333,6 +462,14 @@ export async function enterFind(ctx, opts) {
   $('btn-swap').classList.toggle('hidden', !isMeetup);
   $('quick-card').classList.toggle('hidden', !isMeetup);
 
+  // GPS long-range phase only makes sense in meetup mode — it needs the
+  // peer channel Nearby mode doesn't have.
+  resetGps();
+  const gpsAvailable = isMeetup && 'geolocation' in navigator;
+  $('gps-card').classList.toggle('hidden', !gpsAvailable);
+  $('precision-title').classList.toggle('hidden', !gpsAvailable);
+  $('btn-gps-enable').onclick = () => enableGps(ctx);
+
   state.session = new RangingSession(ctx.engine, {
     channel: ctx.settings.channel,
     adaptive: ctx.settings.adaptive,
@@ -416,6 +553,7 @@ export async function leaveFind(ctx) {
   state.active = false;
   stopAutoPing();
   releaseWakeLock();
+  resetGps();
   if (state.ws) { state.ws.close(); state.ws = null; }
   if (state.session) { state.session.stop(); state.session = null; }
   await ctx.engine.stop();

@@ -158,7 +158,47 @@
       <div id="find-qr" class="qr-box" aria-label="QR code with the invite link"></div>
     </div>
 
+    <div id="gps-card" class="card hidden">
+      <div class="gps-header">
+        <h2 data-i18n="gps.title">Long range (GPS)</h2>
+        <span id="gps-status" class="pill pill-idle"><span class="pill-dot"></span><span id="gps-status-text" data-i18n="gps.off">Off</span></span>
+      </div>
+
+      <div id="gps-enable-row">
+        <p class="muted small" data-i18n="gps.intro">A rough distance and direction while you're still too far apart for sound-based finding.</p>
+        <button id="btn-gps-enable" class="btn btn-outline" data-i18n="gps.enable">Enable GPS</button>
+      </div>
+
+      <div id="gps-live" class="gps-live hidden">
+        <div class="compass-wrap">
+          <svg id="compass" viewBox="0 0 160 160" class="compass" aria-hidden="true">
+            <circle cx="80" cy="80" r="72" class="compass-ring" />
+            <text x="80" y="18" class="compass-n" text-anchor="middle">N</text>
+            <g id="compass-arrow" class="compass-arrow-group">
+              <path d="M80 26 L93 92 L80 77 L67 92 Z" class="compass-arrow" />
+            </g>
+          </svg>
+        </div>
+        <div class="gps-readout">
+          <div id="gps-distance" class="gps-distance">—</div>
+          <div id="gps-accuracy" class="muted small">—</div>
+          <div id="gps-heading-note" class="muted small hidden" data-i18n="gps.northUp">North-up (no compass heading)</div>
+        </div>
+      </div>
+
+      <div id="gps-denied" class="hidden">
+        <p class="muted small" data-i18n="gps.denied">Location access was blocked. You can still use Precision find below once you're within earshot.</p>
+      </div>
+
+      <div id="gps-suggest" class="gps-suggest hidden" role="status">
+        <span data-i18n="gps.suggest">You might already be close enough — try Precision find below.</span>
+      </div>
+
+      <p class="muted small center" data-i18n="gps.unreliableNote">Approximate only — degrades indoors, near tall buildings, and in dense venues.</p>
+    </div>
+
     <div class="card find-main">
+      <h2 id="precision-title" class="precision-title hidden" data-i18n="find.precisionTitle">Precision find (sound)</h2>
       <div class="role-row">
         <div class="role-current">
           <span class="muted small" data-i18n="find.yourRole">Your role</span>

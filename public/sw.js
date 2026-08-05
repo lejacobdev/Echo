@@ -12,6 +12,7 @@ const SHELL = [
   '/js/ranging.js',
   '/js/ranging-worklet.js',
   '/js/goertzel.js',
+  '/js/geo.js',
   '/js/net.js',
   '/js/i18n.js',
   '/js/qr.js',
