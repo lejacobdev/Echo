@@ -91,7 +91,7 @@ function applySettings() {
   const { theme, lang } = ctx.settings;
   const dark = theme === 'dark' || (theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0b0e14' : '#f4f6fa');
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#0c0c0d' : '#f4f3ef');
   setLang(lang === 'auto' ? detectLang() : lang);
   setActivity(ctx.engine.active ? 'listening' : 'idle');
 }

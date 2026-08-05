@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="dark light" />
-<meta name="theme-color" content="#0b0e14" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#F4F3EF" />
 <meta name="description" content="Echo — find each other precisely in a crowd using only sound. No GPS, works on any phone." />
 <title>Echo — Find each other by sound</title>
 <link rel="stylesheet" href="/css/app.css" />
@@ -57,21 +57,27 @@
 
     <div class="stack">
       <button id="home-start" class="btn btn-primary btn-big">
-        <span class="btn-icon">📡</span>
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="1.6" class="icon-fill"/><path d="M8.8 15.2a4.6 4.6 0 0 1 0-6.4M15.2 8.8a4.6 4.6 0 0 1 0 6.4M6.2 17.8a8.3 8.3 0 0 1 0-11.6M17.8 6.2a8.3 8.3 0 0 1 0 11.6"/></svg>
+        </span>
         <span>
           <span class="btn-title" data-i18n="home.start">Start a meetup</span>
           <span class="btn-sub" data-i18n="home.startSub">Invite a friend or share a code</span>
         </span>
       </button>
       <button id="home-join" class="btn btn-outline btn-big">
-        <span class="btn-icon">🔑</span>
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5 8 19.5M16 4.5l-1.5 15M5 9h14.5M4.5 15H19"/></svg>
+        </span>
         <span>
           <span class="btn-title" data-i18n="home.join">Join with a code</span>
           <span class="btn-sub" data-i18n="home.joinSub">Someone sent you an Echo code or link</span>
         </span>
       </button>
       <button id="home-local" class="btn btn-outline btn-big">
-        <span class="btn-icon">📴</span>
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="5.2" height="10" rx="1.4"/><rect x="15.8" y="7" width="5.2" height="10" rx="1.4"/><path d="M10.7 10.4a2.6 2.6 0 0 1 0 3.2M13.3 10.4a2.6 2.6 0 0 0 0 3.2"/></svg>
+        </span>
         <span>
           <span class="btn-title" data-i18n="home.local">Nearby mode</span>
           <span class="btn-sub" data-i18n="home.localSub">No account, no internet — pick roles manually</span>
@@ -423,10 +429,22 @@
 
 <!-- ============ TABBAR ============ -->
 <nav id="tabbar" class="tabbar">
-  <button data-nav="home" class="tab active"><span class="tab-icon">🏠</span><span data-i18n="nav.home">Home</span></button>
-  <button data-nav="friends" class="tab"><span class="tab-icon">👥</span><span data-i18n="nav.friends">Friends</span></button>
-  <button data-nav="history" class="tab"><span class="tab-icon">🕓</span><span data-i18n="nav.history">History</span></button>
-  <button data-nav="settings" class="tab"><span class="tab-icon">⚙️</span><span data-i18n="nav.settings">Settings</span></button>
+  <button data-nav="home" class="tab active">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 4.8l8 6.7"/><path d="M6.4 10.4V19h11.2v-8.6"/></svg>
+    <span data-i18n="nav.home">Home</span>
+  </button>
+  <button data-nav="friends" class="tab">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><path d="M3.6 19c.6-3 2.6-4.5 5.4-4.5s4.8 1.5 5.4 4.5"/><circle cx="16.6" cy="9.5" r="2.4"/><path d="M16 14.7c2.4.3 3.8 1.7 4.4 4.3"/></svg>
+    <span data-i18n="nav.friends">Friends</span>
+  </button>
+  <button data-nav="history" class="tab">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg>
+    <span data-i18n="nav.history">History</span>
+  </button>
+  <button data-nav="settings" class="tab">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h2.2M10.8 7H19M5 12h8.2M16.8 12H19M5 17h1.2M9.8 17H19"/><circle cx="9" cy="7" r="1.8"/><circle cx="15" cy="12" r="1.8"/><circle cx="8" cy="17" r="1.8"/></svg>
+    <span data-i18n="nav.settings">Settings</span>
+  </button>
 </nav>
 
 <!-- ============ MODALS / TOASTS ============ -->
