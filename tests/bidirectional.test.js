@@ -152,3 +152,74 @@ test('directional (Nearby mode) seeker ignores replies, bidirectional seeker doe
   assert.equal(readings, 1);
 
 });
+
+// calibrate() spends real wall-clock time between rounds (a 450ms
+// setTimeout, to let reverb die down), so unlike the other tests here it
+// needs a fake engine whose currentAudioTime actually advances with real
+// elapsed time — exactly like a real AudioContext's currentTime — rather
+// than one a test manually bumps by a fixed hop amount. Otherwise the
+// simulated clock barely moves between rounds and RESPONDER_DEBOUNCE_MS
+// (350ms) falsely looks uncleared, which is a test-harness artifact, not
+// a real bug: real hardware clocks track real time, so 450ms of actual
+// waiting always clears a 350ms debounce.
+function makeRealtimeFakeEngine() {
+  const start = Date.now();
+  return {
+    workletReady: true,
+    active: true,
+    get currentAudioTime() { return (Date.now() - start) / 1000; },
+    onDetect: null,
+    onWorkletLevels: null,
+    played: [],
+    configureWorklet() {},
+    playTone(freq) { this.played.push(freq); },
+    floorAt() { return 0; },
+  };
+}
+
+function coupleRealtime(a, b, delay = 0.02) {
+  const wrap = (txSession, rxSession) => {
+    const orig = txSession.engine.playTone.bind(txSession.engine);
+    txSession.engine.playTone = (freq) => {
+      orig(freq);
+      const idx = freqIndexOf(freq);
+      if (idx >= 0) rxSession._onWorkletCross(idx, rxSession.engine.currentAudioTime + delay);
+    };
+  };
+  wrap(a, b);
+  wrap(b, a);
+}
+
+test('bidirectional: peer keeps responding normally after one device runs calibrate()', async () => {
+  const engineA = makeRealtimeFakeEngine();
+  const engineB = makeRealtimeFakeEngine();
+  const readingsA = [];
+  const readingsB = [];
+  let repliesB = 0;
+
+  const deviceA = new RangingSession(engineA, {
+    channel: 'A', bidirectional: true,
+    onReading: (rtt, dist) => readingsA.push({ rtt, dist }),
+  });
+  const deviceB = new RangingSession(engineB, {
+    channel: 'B', bidirectional: true,
+    onReading: (rtt, dist) => readingsB.push({ rtt, dist }),
+    onReply: () => { repliesB++; },
+  });
+  coupleRealtime(deviceA, deviceB);
+
+  const result = await deviceA.calibrate(5);
+  assert.equal(result.ok, true, 'calibration should succeed when the peer is present and responding');
+  assert.equal(result.successes, 5);
+  assert.ok(repliesB >= 5, `deviceB should have replied to every calibration ping, replied ${repliesB} times`);
+
+  // deviceB's Respond path is unconditional and never gated on deviceA's
+  // calibration state, so it must still be responding normally afterward.
+  readingsA.length = 0;
+  assert.equal(deviceA.ping(), true);
+  assert.equal(readingsA.length, 1, 'deviceA should still get a normal reading from deviceB after calibration');
+
+  readingsB.length = 0;
+  assert.equal(deviceB.ping(), true);
+  assert.equal(readingsB.length, 1, 'deviceB should still get a normal reading from deviceA after A calibrated');
+});

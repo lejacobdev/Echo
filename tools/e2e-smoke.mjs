@@ -96,6 +96,12 @@ const bidirPeerB = await bob.textContent('#bidir-peer-name');
 assert(bidirPeerA === 'Bob' && bidirPeerB === 'Alice', `bidir-status should name the peer, got "${bidirPeerA}"/"${bidirPeerB}"`);
 console.log('✓ both devices bidirectionally seeking+responding, no swap/role concept left');
 
+// --- Calibration is optional: Ping/Live must already be usable, with no
+//     calibration run at all ---
+assert(!(await alice.isDisabled('#btn-ping')), 'Ping must be enabled without calibrating first');
+assert(!(await alice.isDisabled('#btn-autoping')), 'Live must be enabled without calibrating first');
+console.log('✓ Ping/Live enabled without calibrating');
+
 // --- Quick message relay ---
 await alice.click('#quick-buttons button');
 await bob.waitForSelector('.toast', { timeout: 5000 });
@@ -120,9 +126,11 @@ const guest = await newUser('guest');
 await guest.click('#home-local');
 await guest.waitForSelector('#view-find:not(.hidden)');
 await guest.waitForSelector('#local-role-toggle:not(.hidden)');
+assert(!(await guest.isDisabled('#btn-ping')), 'Nearby mode: Ping must be enabled without calibrating first');
+assert(await guest.isVisible('#role-note'), 'Nearby mode must show the "set the other phone to the opposite role" note');
 await guest.click('#role-btn-responder');
 await guest.waitForSelector('#responder-panel:not(.hidden)');
-console.log('✓ nearby mode with manual roles works');
+console.log('✓ nearby mode with manual roles works, Ping enabled without calibrating, role-note shown');
 
 // --- Join view via deep link redirect ---
 const joiner = await newUser('joiner');

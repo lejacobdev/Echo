@@ -1,7 +1,7 @@
 // Echo service worker: precached app shell for first-launch offline support,
 // network-first for every subsequent fetch. API and WebSocket traffic
 // always goes to the network untouched.
-const VERSION = 'echo-v1.7.0';
+const VERSION = 'echo-v1.8.0';
 const SHELL = [
   '/',
   '/index.html',

@@ -16,11 +16,15 @@ with no account** ("Nearby mode").
 **Acoustic ranging**
 - Round-trip ultrasonic chirp ranging (protocol below) with live distance dial,
   warmer/colder trend, proximity bands, and an expanding-ring ping animation
-- Guided 5-round calibration wizard (median of successful rounds)
+- Optional 5-round calibration wizard (median of successful rounds) — Ping
+  and Live work immediately without it, using a zero offset; calibrating
+  first only refines accuracy
 - Single-shot **Ping** and continuous **Live** auto-ping tracking
 - Adaptive noise-floor detection threshold (manual override in settings)
-- Two frequency channels — A: 19/20 kHz, B: 17.5/18.5 kHz for hardware that
-  rolls off near 20 kHz; automatic fallback when the mic's sample rate can't
+- Three frequency channels — A: 19/20 kHz, B: 17.5/18.5 kHz for hardware
+  that rolls off near 20 kHz, C: 12.5/13.5 kHz as an audible diagnostic
+  channel to test whether a "no reply" report is hardware sensitivity or
+  something else; automatic fallback when the mic's sample rate can't
   support channel A
 - Outlier-rejecting smoothing (rolling median + EMA)
 - Haptic feedback, optional audible ticks (accessibility), screen wake lock
@@ -38,9 +42,9 @@ with no account** ("Nearby mode").
   the distance-minus-accuracy margin drops to 15m the Precision (sound) card
   becomes primary (GPS visually demotes but keeps tracking in the
   background, in case you're wrong and still too far); it only switches back
-  to GPS-primary once you drift back out past 25m. If you're already
-  calibrated when it switches to sound, Live continuous ping starts
-  automatically too; if you drift back apart, Live stops rather than
+  to GPS-primary once you drift back out past 25m. Live continuous ping
+  starts automatically when it switches to sound — calibration isn't a
+  prerequisite — and if you drift back apart, Live stops rather than
   wasting pings at a range acoustic can't realistically cover
 - Compass arrow rotates with device heading when available (`deviceorientation`
   / iOS's `webkitCompassHeading`, permission-gated on iOS 13+); falls back to
@@ -139,15 +143,21 @@ distance follows:
    distance ≈ ((RTT − calibrationOffset) / 1000) × 343 m/s ÷ 2
    ```
 
-**Calibration matters.** Audio I/O latency (buffers, drivers, codecs) is tens
-of milliseconds and differs per device pair — it would dominate the actual
-acoustic travel time (~2.9 ms per meter of separation). Calibration runs the
-same protocol 5 times with the phones touching (distance ≈ 0) and stores the
-median RTT as the offset for the session. In meetup mode, tap Calibrate on
-*both* phones while they're touching — since both devices seek on their own
+**Calibration improves accuracy but is optional.** Audio I/O latency
+(buffers, drivers, codecs) is tens of milliseconds and differs per device
+pair — left uncalibrated (offset defaults to 0), it's read directly as
+distance, so readings run a bit long by whatever that latency is. Ping and
+Live both work fine without calibrating first; nothing is gated behind it.
+Calibration runs the same protocol 5 times with the phones touching
+(distance ≈ 0) and stores the median RTT as the offset for the session, for
+whoever wants the tighter reading. In meetup mode, tap Calibrate on *both*
+phones while they're touching — since both devices seek on their own
 channel simultaneously, each one independently measures and stores its own
 offset in the same round of touching, rather than needing a separate pass
-per device.
+per device. Calibrating with no peer present yet (or, in Nearby mode, with
+the other phone still left on the default Seeker role instead of switched
+to Responder) will just fail with no replies heard — it's not a sign
+anything is broken.
 
 The detection threshold adapts to the ambient noise floor at each target
 frequency (slow EMA, frozen during spikes so chirps don't inflate it); the

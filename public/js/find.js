@@ -217,7 +217,9 @@ function switchPhase(ctx, phase) {
   if (phase === 'sound') {
     ctx.toast(t('gps.switchedToSound'));
     haptic([20, 40, 20]);
-    if (state.session?.isCalibrated && !state.autoOn) startAutoPing();
+    // Calibration is optional — Live must auto-start here regardless of
+    // whether the session has been calibrated (offset just defaults to 0).
+    if (!state.autoOn) startAutoPing();
   } else {
     ctx.toast(t('gps.switchedToGps'), 'warn');
     if (state.autoOn) stopAutoPing();
@@ -358,6 +360,14 @@ async function startEngine(ctx) {
   applyChannelSelection(ctx, preferred);
   state.session.start();
 
+  // Calibration is optional: it only refines the zero-distance timing
+  // offset (defaults to 0ms, i.e. uncalibrated RTT read directly as
+  // distance) for better accuracy. Ping/Live work the moment the mic is
+  // live — they must never be gated behind a calibration run that
+  // requires a peer to already be present and responding.
+  $('btn-ping').disabled = false;
+  $('btn-autoping').disabled = false;
+
   if (/iPhone|iPad/.test(navigator.userAgent)) ctx.toast(t('find.silentModeHint'), 'info', 6000);
   return true;
 }
@@ -394,7 +404,7 @@ function openCalibOverlay(ctx) {
       haptic([40, 60, 40]);
       setTimeout(() => overlay.classList.add('hidden'), 900);
     } else {
-      $('calib-step').textContent = t('calib.failed');
+      $('calib-step').textContent = t(state.mode === 'meetup' ? 'calib.failedMeetup' : 'calib.failed');
       $('calib-start').disabled = false;
     }
   };
@@ -535,6 +545,7 @@ export async function enterFind(ctx, opts) {
   $('find-conn').classList.toggle('hidden', !isMeetup);
   $('quick-card').classList.toggle('hidden', !isMeetup);
   $('role-row').classList.toggle('hidden', isMeetup);
+  $('role-note').classList.toggle('hidden', isMeetup);
   $('local-role-toggle').classList.toggle('hidden', isMeetup);
   $('bidir-status').classList.toggle('hidden', !isMeetup);
   $('responder-panel').classList.toggle('hidden', true); // re-shown by applyRoleUi in local mode only
@@ -568,7 +579,7 @@ export async function enterFind(ctx, opts) {
       }
     },
     onTimeout() {
-      $('dial-band').textContent = t('find.noReply');
+      $('dial-band').textContent = t(isMeetup ? 'find.noReplyMeetup' : 'find.noReply');
     },
     onReply(count) {
       $('reply-count').textContent = String(count);

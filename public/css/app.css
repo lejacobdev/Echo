@@ -675,6 +675,8 @@ input[type="range"] { width: 100%; accent-color: var(--ink); }
 .role-current strong { font-size: 1.1rem; letter-spacing: -0.015em; }
 .role-current .small { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.11em; font-weight: 700; }
 
+.role-note { width: 100%; margin: -0.15rem 0 0; text-align: center; }
+
 .dial-wrap { position: relative; width: min(262px, 70vw); margin: 1rem 0 0.85rem; }
 .dial { width: 100%; height: auto; display: block; transform: rotate(-90deg); }
 
