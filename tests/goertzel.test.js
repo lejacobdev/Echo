@@ -59,3 +59,30 @@ test('toByteScale clamps into 0-255', () => {
   assert.equal(toByteScale(10), 255);
   assert.ok(toByteScale(0.5) > 0 && toByteScale(0.5) <= 255);
 });
+
+// Regression for a real-device report: a confirmed-transmitted reply
+// arriving from a few meters away was measured well below what the old
+// gain/floor combo (gain=6, adaptiveMin=70) could clear — a weak-but-
+// genuine signal was being silently rejected as noise, not lost to a
+// dispatch bug (the responder's reply counter was confirmed incrementing;
+// the seeker just never saw its reply cell cross the threshold). A 5%
+// full-scale amplitude tone lands right in that gap: byte 63 at the old
+// gain=6 (fails the old floor of 70), byte 126 at the new gain=12 (clears
+// the new floor of 40 with room to spare). See ranging-worklet.js's
+// adaptiveMin/adaptiveMargin and toByteScale for the matching production
+// constants.
+test('a weak (5% amplitude) but real signal that used to miss the old threshold now clears it', () => {
+  const weakReply = goertzelMagnitude(tone(20000, 0.05), 20000, SAMPLE_RATE);
+  const oldByteValue = toByteScale(weakReply, 6);
+  const newByteValue = toByteScale(weakReply, 12);
+  const oldAdaptiveMin = 70;
+  const newAdaptiveMin = 40; // mirrors ranging-worklet.js's adaptiveMin
+  assert.ok(
+    oldByteValue < oldAdaptiveMin,
+    `sanity check: this signal (byte ${oldByteValue}) should have missed the old floor (${oldAdaptiveMin})`
+  );
+  assert.ok(
+    newByteValue > newAdaptiveMin,
+    `a real 5%-amplitude signal (byte ${newByteValue}) must clear the new adaptive floor (${newAdaptiveMin}) in a quiet room`
+  );
+});

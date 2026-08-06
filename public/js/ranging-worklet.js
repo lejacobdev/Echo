@@ -37,7 +37,13 @@ function goertzelMagnitude(samples, freq, sampleRate) {
   return Math.sqrt(Math.max(0, power)) / (N / 2);
 }
 
-function toByteScale(amplitude, gain = 6) {
+// gain=12 (was 6): confirmed against real-device reports that a genuine,
+// confirmed-transmitted reply arriving from a few meters away was landing
+// right at ~10% relative amplitude — toByteScale(0.1) was ~77 at gain=6,
+// barely clearing (or falling just short of) adaptiveMin below. Doubling
+// the gain gives real-but-weak signals comfortable headroom above the
+// fixed floor without changing the underlying detector.
+function toByteScale(amplitude, gain = 12) {
   return Math.max(0, Math.min(255, Math.round(amplitude * 255 * gain)));
 }
 
@@ -52,8 +58,14 @@ class RangingProcessor extends AudioWorkletProcessor {
     this.freqs = [19000, 20000, 17500, 18500, 12500, 13500];
     this.mode = 'adaptive';       // 'adaptive' | 'manual'
     this.manualThreshold = 165;   // 0-255 scale
-    this.adaptiveMargin = 30;     // lower than the old 45: Goertzel's cleaner
-    this.adaptiveMin = 70;        // SNR affords a more sensitive default
+    // Lowered from 30/70: real-device testing showed a confirmed,
+    // successfully-transmitted reply from a few meters away landing well
+    // under the old floor even on an audible test channel — this was a
+    // sensitivity problem, not a detection/dispatch bug. The high-frequency
+    // bands this app uses (12.5-20kHz) carry very little everyday ambient
+    // noise, so a lower floor here is safe against false triggers.
+    this.adaptiveMargin = 20;
+    this.adaptiveMin = 40;
 
     this.ring = new Float32Array(WINDOW);
     this.ringPos = 0;

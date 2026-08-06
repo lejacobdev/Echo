@@ -27,6 +27,7 @@ export function goertzelMagnitude(samples, freq, sampleRate) {
 // Maps the ~0..1 amplitude estimate onto the app's historical 0-255 scale
 // (what AnalyserNode's getByteFrequencyData used to hand back), so existing
 // threshold defaults and the manual-threshold slider stay meaningful.
-export function toByteScale(amplitude, gain = 6) {
+// gain=12 mirrors ranging-worklet.js — see the comment there for why.
+export function toByteScale(amplitude, gain = 12) {
   return Math.max(0, Math.min(255, Math.round(amplitude * 255 * gain)));
 }

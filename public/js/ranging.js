@@ -97,8 +97,14 @@ export function createSmoother(windowSize = 5, alpha = 0.45) {
 const RESPONDER_DEBOUNCE_MS = 350;
 const SEEKER_MIN_RTT_MS = 15;   // ignore triggers while our own chirp still rings
 const SEEKER_TIMEOUT_MS = 2500;
-const ADAPTIVE_MARGIN = 45;     // fallback-path trigger = noiseFloor + margin
-const MIN_ADAPTIVE_THRESHOLD = 90;
+// Lowered from 45/90 alongside the worklet path's adaptiveMargin/adaptiveMin
+// (ranging-worklet.js) — real-device testing showed the old floor rejecting
+// confirmed-transmitted, genuinely-arriving signal from a few meters away.
+// This fallback path only runs on browsers without AudioWorklet support, so
+// it's unverified against the same real-device report, but there's no
+// reason its floor should be more conservative than the worklet's.
+const ADAPTIVE_MARGIN = 30;     // fallback-path trigger = noiseFloor + margin
+const MIN_ADAPTIVE_THRESHOLD = 55;
 
 export class RangingSession {
   /**
