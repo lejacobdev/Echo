@@ -279,10 +279,12 @@
       <dl class="debug-grid">
         <dt data-i18n="debug.samplerate">Sample rate</dt><dd id="dbg-samplerate">—</dd>
         <dt data-i18n="debug.worklet">Detection path</dt><dd id="dbg-worklet">—</dd>
+        <dt data-i18n="debug.micproc">Mic processing (browser-reported)</dt><dd id="dbg-micproc">—</dd>
         <dt data-i18n="debug.mychannel">Transmit / respond-on</dt><dd id="dbg-mychannel">—</dd>
         <dt data-i18n="debug.rtt">Raw RTT</dt><dd id="dbg-rtt">—</dd>
         <dt data-i18n="debug.offset">Calibration offset</dt><dd id="dbg-offset">—</dd>
       </dl>
+      <p class="muted small debug-note" data-i18n="debug.micprocNote">EC/NS/AGC should read "false" — if any read "true", the browser silently re-enabled voice processing that suppresses this app's tones, which reads as almost no signal even very close up.</p>
       <p class="muted small debug-note" data-i18n="debug.note">Live signal vs. threshold for every channel — green means it's currently strong enough to trigger. "Seek" is a chirp arriving from a peer; "Reply" is the answer coming back to you. Your own outgoing chirp briefly spiking its own Seek/Reply cell is normal speaker-into-mic bleed, not a real detection.</p>
       <div class="debug-channels">
         <div class="debug-channel-block">

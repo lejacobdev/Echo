@@ -355,6 +355,16 @@ async function startEngine(ctx) {
   ctx.setActivity('listening');
   $('dbg-samplerate').textContent = `${ctx.engine.sampleRate} Hz`;
   $('dbg-worklet').textContent = ctx.engine.workletReady ? 'AudioWorklet' : 'Fallback (rAF)';
+  // What the browser actually granted vs. what was requested — voice
+  // processing left silently ON here (despite requesting it off) is a very
+  // plausible reason signal reads near-zero even up close, especially on
+  // Android: the mic can stay on an OS voice-call path no page-level
+  // constraint can override, and noise suppression tuned for speech
+  // actively removes a steady non-speech tone like this app's chirps.
+  const ts = ctx.engine.trackSettings;
+  $('dbg-micproc').textContent = ts
+    ? `EC:${ts.echoCancellation ?? '?'} NS:${ts.noiseSuppression ?? '?'} AGC:${ts.autoGainControl ?? '?'} SR:${ts.sampleRate ?? '?'}`
+    : t('debug.micUnknown');
 
   const preferred = state.mode === 'meetup' ? (state.assignedChannel || ctx.settings.channel) : ctx.settings.channel;
   applyChannelSelection(ctx, preferred);

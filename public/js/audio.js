@@ -24,6 +24,13 @@ export class AudioEngine {
     this.onDetect = null;      // (freqIndex, audioTimeSec, mag) => void
     this.onWorkletLevels = null; // ({ mags, floors, thresholds }) => void
     this._starting = null;     // in-flight start() promise, for de-duplication
+    // What the browser/OS actually granted, which can differ from what was
+    // requested — MediaTrackConstraints are hints, not guarantees, and it's
+    // common (especially on Android) for the mic to stay routed through a
+    // voice-call audio path that quietly re-enables noise suppression no
+    // matter what the page asked for. Surfaced in the debug panel so that's
+    // visible instead of just inferred from "detection doesn't work".
+    this.trackSettings = null;
   }
 
   get sampleRate() {
@@ -70,13 +77,33 @@ export class AudioEngine {
     this.ctx = new Ctor();
     try {
       // Disable all voice processing: it suppresses exactly the narrow-band
-      // ultrasonic signal we depend on.
+      // ultrasonic-adjacent signal we depend on. The standard constraints
+      // alone are frequently NOT fully honored, especially on Android
+      // Chrome, where the mic can still get routed through an OS/driver
+      // voice-call audio path that applies its own noise suppression
+      // upstream of anything the page can see or control — and a steady
+      // narrow-band tone with no speech formants is exactly what
+      // voice-tuned noise suppression is designed to remove, which reads
+      // as "no signal at all, even very close" rather than a weak one.
+      // The legacy "goog*" constraints are non-standard but still honored
+      // by Chromium and give a real shot at a truly raw/unprocessed input;
+      // unsupported constraint keys are required by spec to be ignored, so
+      // this is safe on browsers (like Safari) that don't recognize them.
+      // The sampleRate hint nudges away from a lower-bandwidth voice-
+      // optimized capture path that would filter out everything above
+      // roughly its own Nyquist before it's even digitized.
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false,
           channelCount: 1,
+          sampleRate: { ideal: 48000 },
+          googEchoCancellation: false,
+          googAutoGainControl: false,
+          googNoiseSuppression: false,
+          googHighpassFilter: false,
+          googTypingNoiseDetection: false,
         },
       });
     } catch (err) {
@@ -86,6 +113,9 @@ export class AudioEngine {
       throw e;
     }
     if (this.ctx.state === 'suspended') await this.ctx.resume();
+
+    try { this.trackSettings = this.stream.getAudioTracks()[0]?.getSettings() || null; }
+    catch { this.trackSettings = null; }
 
     const src = this.ctx.createMediaStreamSource(this.stream);
 

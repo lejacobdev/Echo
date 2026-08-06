@@ -110,6 +110,13 @@ console.log('✓ quick message relayed');
 // --- Mic pill active, debug toggle, calibration overlay opens ---
 const pill = await alice.textContent('#activity-pill');
 assert(pill.length > 0, 'activity pill rendered');
+// Browser-reported mic settings (EC/NS/AGC/sample rate) populate as soon as
+// the engine starts, regardless of whether the debug panel is shown —
+// added to surface cases where the OS/browser silently re-enables voice
+// processing that would otherwise just look like "no signal".
+const micproc = await alice.textContent('#dbg-micproc');
+assert(micproc && micproc !== '—', `mic processing settings should populate, got "${micproc}"`);
+console.log(`✓ mic processing settings reported: ${micproc}`);
 await alice.click('#btn-calibrate');
 await alice.waitForSelector('#calib-overlay:not(.hidden)');
 await alice.click('#calib-cancel');
