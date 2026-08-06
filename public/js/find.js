@@ -378,7 +378,16 @@ async function startEngine(ctx) {
   $('btn-ping').disabled = false;
   $('btn-autoping').disabled = false;
 
-  if (/iPhone|iPad/.test(navigator.userAgent)) ctx.toast(t('find.silentModeHint'), 'info', 6000);
+  if (/iPhone|iPad/.test(navigator.userAgent)) {
+    ctx.toast(t('find.silentModeHint'), 'info', 6000);
+    // iOS applies its own mic processing that getUserMedia constraints
+    // can't fully override, and unlike Chrome/Android there's no
+    // JS-level workaround for it — Mic Mode (Control Center, or the
+    // control strip during an active recording) is the one lever a user
+    // has: "Standard"/"Voice Isolation" both suppress non-speech sound
+    // (exactly this app's tones); "Wide Spectrum" doesn't.
+    setTimeout(() => ctx.toast(t('find.micModeHint'), 'info', 7000), 6500);
+  }
   return true;
 }
 
