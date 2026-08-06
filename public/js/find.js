@@ -378,16 +378,13 @@ async function startEngine(ctx) {
   $('btn-ping').disabled = false;
   $('btn-autoping').disabled = false;
 
-  if (/iPhone|iPad/.test(navigator.userAgent)) {
-    ctx.toast(t('find.silentModeHint'), 'info', 6000);
-    // iOS applies its own mic processing that getUserMedia constraints
-    // can't fully override, and unlike Chrome/Android there's no
-    // JS-level workaround for it — Mic Mode (Control Center, or the
-    // control strip during an active recording) is the one lever a user
-    // has: "Standard"/"Voice Isolation" both suppress non-speech sound
-    // (exactly this app's tones); "Wide Spectrum" doesn't.
-    setTimeout(() => ctx.toast(t('find.micModeHint'), 'info', 7000), 6500);
-  }
+  // Note: iOS's Mic Mode (Wide Spectrum etc.) was investigated as a
+  // possible lever here but confirmed unavailable — it's only exposed
+  // during an active FaceTime/qualifying call, never for a regular
+  // website's getUserMedia access, so there's currently no known
+  // user-facing control over whatever mic processing iOS/Safari applies
+  // to this app's audio.
+  if (/iPhone|iPad/.test(navigator.userAgent)) ctx.toast(t('find.silentModeHint'), 'info', 6000);
   return true;
 }
 
